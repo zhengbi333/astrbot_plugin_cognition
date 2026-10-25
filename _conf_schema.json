@@ -1,0 +1,170 @@
+{
+  "general": {
+    "description": "总开关",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用工具箱",
+        "type": "bool",
+        "default": true,
+        "hint": "关掉后所有工具都会拒绝执行（给模型的说法是「工具箱总开关是关闭的」）。"
+      }
+    }
+  },
+  "fs": {
+    "description": "文件工具（工作区内）",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用文件工具",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后可列目录、读文件、写文件、按正则搜索内容。所有操作都被限制在插件数据目录下的 workspace 里，越界会被拒绝。"
+      },
+      "allow_write": {
+        "description": "允许写入/删除",
+        "type": "bool",
+        "default": true,
+        "hint": "关掉后只能读和搜，不能写文件、不能删除。只想让 Bot 读资料时建议关掉。"
+      },
+      "max_read_bytes": {
+        "description": "单次读取上限（字节）",
+        "type": "int",
+        "default": 262144,
+        "hint": "读文件时最多读这么多字节（默认 256KB），超出会截断并注明。避免把大文件塞进上下文。"
+      },
+      "max_write_bytes": {
+        "description": "单次写入上限（字节）",
+        "type": "int",
+        "default": 1048576,
+        "hint": "一次写入的内容不能超过这个大小（默认 1MB）。"
+      },
+      "max_list_entries": {
+        "description": "列目录最多显示项数",
+        "type": "int",
+        "default": 200,
+        "hint": "目录里文件很多时只列前 N 项，避免刷屏。"
+      }
+    }
+  },
+  "web": {
+    "description": "网络工具",
+    "type": "object",
+    "items": {
+      "fetch_enabled": {
+        "description": "启用抓网页正文",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后模型可以打开一个网址并读它的正文。会拒绝访问本机/内网地址（防 SSRF）。"
+      },
+      "search_enabled": {
+        "description": "启用联网搜索",
+        "type": "bool",
+        "default": true,
+        "hint": "需要填下面的搜索 API Key（Tavily）。"
+      },
+      "tavily_api_key": {
+        "description": "搜索 Key（Tavily）",
+        "type": "string",
+        "default": "",
+        "hint": "在 tavily.com 注册后拿到 tvly- 开头的 Key。留空则搜索工具会提示未配置。"
+      },
+      "timeout_seconds": {
+        "description": "网络超时（秒）",
+        "type": "float",
+        "default": 20.0,
+        "hint": "抓网页/搜索/下载的单次超时。"
+      },
+      "max_bytes": {
+        "description": "抓取体积上限（字节）",
+        "type": "int",
+        "default": 2097152,
+        "hint": "抓网页时最多读这么多字节（默认 2MB），超出就截断。"
+      },
+      "max_chars": {
+        "description": "返回正文上限（字）",
+        "type": "int",
+        "default": 4000,
+        "hint": "抓到的正文最多返回多少字给模型，避免占满上下文。"
+      },
+      "search_results": {
+        "description": "搜索返回条数",
+        "type": "int",
+        "default": 5,
+        "hint": "默认返回 5 条结果（1~10）。"
+      },
+      "user_agent": {
+        "description": "User-Agent",
+        "type": "string",
+        "default": "",
+        "hint": "留空用内置的浏览器 UA。某些站点会拦默认 UA，可自行填写。"
+      }
+    }
+  },
+  "download": {
+    "description": "下载文件",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用下载",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后模型可以把网址里的文件下载进工作区（默认放在 downloads/ 下）。同样拒绝内网地址。"
+      },
+      "max_bytes": {
+        "description": "单个文件上限（字节）",
+        "type": "int",
+        "default": 52428800,
+        "hint": "默认 50MB，超过就中止并报错。"
+      },
+      "allow_extensions": {
+        "description": "允许的扩展名",
+        "type": "string",
+        "default": "png,jpg,jpeg,gif,webp,pdf,zip,txt,md,json,csv,docx,xlsx,pptx",
+        "hint": "逗号分隔；留空表示不限制。建议保持白名单，别允许 exe/bat 之类。"
+      }
+    }
+  },
+  "shell": {
+    "description": "执行命令（高危，默认关）",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用命令执行",
+        "type": "bool",
+        "default": false,
+        "hint": "⚠️ 风险最高的一项：聊天窗口后面是群里的所有人。默认关闭。开启后也只允许白名单里的程序，且拒绝 bash/cmd/powershell/python 等高危入口。"
+      },
+      "allowlist": {
+        "description": "程序白名单",
+        "type": "string",
+        "default": "git",
+        "hint": "逗号分隔的程序名，只写名字不带路径，例如：git, ffmpeg。绝对不要加 shell/python/node——它们等于任意执行。"
+      },
+      "timeout_seconds": {
+        "description": "命令超时（秒）",
+        "type": "float",
+        "default": 15.0,
+        "hint": "超时会被强制终止。"
+      },
+      "max_output_chars": {
+        "description": "输出截断长度（字）",
+        "type": "int",
+        "default": 4000,
+        "hint": "输出超过这个长度会截断，避免刷屏与爆上下文。"
+      }
+    }
+  },
+  "limits": {
+    "description": "用量上限",
+    "type": "object",
+    "items": {
+      "daily_calls": {
+        "description": "每日调用总上限",
+        "type": "int",
+        "default": 200,
+        "hint": "所有工具合计每天最多调用多少次；0 表示不限制。防止被刷爆配额或烧 token。"
+      }
+    }
+  }
+}
