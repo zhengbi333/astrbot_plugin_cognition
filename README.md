@@ -4,9 +4,10 @@
 
 它不是"嘴上说一句"——每次调用都在你的机器上**真的发生**，并把结果如实交回给模型。
 它还能**汲取经验**：把读过的网页整理成带来源的条目存下来，日后可以再搜到；
-**也能把做好的文档直接发给你**（`toolbox_send_file`）。
+**也能把做好的文档直接发给你**（`toolbox_send_file`）；
+**更能接住「没有现成工具」的活**：`toolbox_python` 让她当场写一段脚本把事做完——**只对你的账号开放**。
 
-- 版本：`alpha-0.3.0`
+- 版本：`alpha-0.4.0`
 - AstrBot 版本：`>= 4.22.0`
 - 更新日志：见 [changelogs/](changelogs/)
 
@@ -30,6 +31,7 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 | **`toolbox_doc_read`** | 读 `.docx` / `.xlsx` / **`.pptx`**（段落、表格、工作表、幻灯片文字） | 开 |
 | **`toolbox_doc_write`** | 新建 `.docx` / `.xlsx` / **`.pptx`**（段落 / 单元格 / 幻灯片大纲） | 开 |
 | **`toolbox_send_file`** | **把工作区里的文件发到当前会话**（「把这个文档发我」） | 开 |
+| **`toolbox_python`** | **任意任务**：在工作区写并运行 Python 脚本（pandas/numpy/docx/openpyxl/pptx/Pillow） | 开（**仅主人**） |
 | **`toolbox_audit`** | 查最近调用记录（谁成功、谁失败、按工具统计） | 开 |
 | `toolbox_download` | 把网址里的文件下载进工作区 | 开 |
 | `toolbox_shell_run` | 执行白名单命令 | **关** |

@@ -24,6 +24,7 @@ from . import PLUGIN_DISPLAY, PLUGIN_NAME, PLUGIN_VERSION
 from . import shell as shell_mod
 from . import web as web_mod
 from . import notes as notes_mod
+from . import exec as exec_mod
 from . import office as office_mod
 from .audit import AuditLog, Quota
 from .workspace import Workspace, WorkspaceError, human_size, safe_filename_from_url
@@ -690,6 +691,68 @@ class CognitionPlugin(Star):
         except Exception as exc:
             self._note_call("send_file", False, str(exc))
             return f"发文件出错：{type(exc).__name__}: {exc}"
+
+    # ------------------------------------------------------------ 工具：任意任务（仅 owner）
+    @filter.llm_tool(name="toolbox_python")
+    async def toolbox_python_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """在工作区里写一段 Python 脚本并运行它——用来完成**任何没有现成工具的活**。
+
+        什么时候用：要处理的活没有对应工具时。例如批量改名/转换、统计与筛选表格、
+        生成图表、把多份文档合并、按规则清洗文本、生成 xlsx/pptx、算日期算账……
+        不要硬拿 fs_write 手工拼，更不要在没做的情况下说"已经做好了"。
+
+        约定：
+        - 当前目录就是工作区，只能读写工作区内的文件；
+        - 已安装：pandas、numpy、python-docx、openpyxl、python-pptx、Pillow；
+        - **一定要把结果 print 出来**（脚本不打印，等于什么都没做）；
+        - 报错就把错误原文贴出来，改一版再跑，别猜。
+
+        Args:
+            code(string): 完整可运行的 Python 代码。
+            timeout(number): 超时秒数，默认 30，最大 120。
+        """
+        block = self._gate("python", "exec.enabled")
+        if block:
+            return block
+        sender = ""
+        try:
+            sender = str(event.get_sender_id() or "")
+        except Exception:
+            sender = ""
+        owners = exec_mod.parse_owners(self._str("exec.owner_ids", ""))
+        if not exec_mod.is_owner(sender, owners):
+            self._note_call("python", False, f"非 owner：{sender or '未知'}")
+            return "这个工具只对主人开放（要写代码跑任务的权限不能给所有人）。"
+        code = str(kwargs.get("code") or "")
+        try:
+            timeout = float(kwargs.get("timeout") or self._float("exec.timeout_seconds", 30.0))
+        except (TypeError, ValueError):
+            timeout = self._float("exec.timeout_seconds", 30.0)
+        timeout = max(1.0, min(120.0, timeout))
+        try:
+            result = await exec_mod.run_python(
+                code,
+                cwd=self.workspace_root,
+                timeout=timeout,
+                max_output_chars=self._int("exec.max_output_chars", 4000),
+                max_code_chars=self._int("exec.max_code_chars", 20000),
+            )
+        except exec_mod.ExecError as exc:
+            self._note_call("python", False, str(exc))
+            return f"跑脚本失败：{exc}"
+        except Exception as exc:
+            self._note_call("python", False, str(exc))
+            return f"跑脚本出错：{type(exc).__name__}: {exc}"
+
+        head = exec_mod.first_line(code)
+        digest = exec_mod.script_digest(code)
+        self._note_call("python", result.ok, f"{digest} {head}"[:200])
+        body = result.output or "（脚本没有任何输出——如果它本该产出东西，请让它 print 出来或写文件）"
+        state = "成功" if result.ok else f"失败（退出码 {result.code}）"
+        return (
+            f"脚本{state}，用时 {result.seconds:.1f}s（{digest}｜{head}）\n"
+            f"--- 输出 ---\n{body}"
+        )
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")

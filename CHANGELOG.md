@@ -1,6 +1,12 @@
 # 更新日志
 
-## alpha-0.3.0（当前）
+## alpha-0.4.0（当前）
+
+- **新增 `toolbox_python`：任意任务能力**。她可以当场写一段 Python 在工作区里跑完——批量转换、统计表格、生成图表/PPT/Excel、清洗抓来的数据——用的就是 AstrBot 自带的 pandas/numpy/python-docx/openpyxl/python-pptx/Pillow。
+- **只对主人的账号开放**（`exec.owner_ids`，留空=谁都不能用）：群友调用直接拒绝并记审计；另有限时强杀、输出与代码长度上限。
+- 单测 94 → **112/112**（含真跑脚本、真产出 xlsx、pandas、超时、owner 门禁）。详见 [changelogs/alpha-0.4.0.md](changelogs/alpha-0.4.0.md)。
+
+## alpha-0.3.0
 
 - **新增 `toolbox_send_file`**：把工作区里的文件（docx/xlsx/pptx/zip…）发到当前会话——「把这个文档发我」终于能真的做到，而不是嘴上说「已经整理好了」。只能发工作区内文件，默认 50MB 上限。
 - **新增 `.pptx` 读写**：`doc_write` 按简单大纲（`---` 分页、`#` 标题、`- ` 要点）生成幻灯片，`doc_read` 逐页读文字；依赖已安装的 `python-pptx 1.0.2`。
