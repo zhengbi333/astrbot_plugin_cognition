@@ -179,6 +179,30 @@
       }
     }
   },
+  "tasks": {
+    "description": "后台任务",
+    "type": "object",
+    "items": {
+      "max_concurrent": {
+        "description": "同时最多几个",
+        "type": "int",
+        "default": 2,
+        "hint": "后台任务并发上限（1~5）。超了会拒绝新任务，避免把机器跑满。"
+      },
+      "max_age_seconds": {
+        "description": "最长存活（秒）",
+        "type": "int",
+        "default": 1800,
+        "hint": "超过这个时间还在跑的任务会被强杀（默认 30 分钟），防止进程泄漏。"
+      },
+      "log_tail_chars": {
+        "description": "日志回传上限（字）",
+        "type": "int",
+        "default": 2000,
+        "hint": "查任务时最多回传多少字日志（保留首尾）。"
+      }
+    }
+  },
   "notes": {
     "description": "经验条目",
     "type": "object",

@@ -1,6 +1,12 @@
 # 更新日志
 
-## alpha-0.4.0（当前）
+## alpha-0.5.0（当前）
+
+- **后台任务**：新增 `toolbox_task_start` / `toolbox_task_status` / `toolbox_task_stop`，耗时脚本丢后台跑、按需查输出与退出码、可随时停；owner-only，并发 2、存活 1800 秒自动清理，日志写文件不占内存。
+- **长输出改为保首尾截断**（前 70% + 省略标记 + 后 30%），不再把异常堆栈最后一行砍掉。
+- 单测 112 → **134/134**，后台任务真机验证 **13/13**；另修掉一个真 bug：`_quota_left` 函数头被误替换会让所有工具 AttributeError。详见 [changelogs/alpha-0.5.0.md](changelogs/alpha-0.5.0.md)。
+
+## alpha-0.4.0
 
 - **新增 `toolbox_python`：任意任务能力**。她可以当场写一段 Python 在工作区里跑完——批量转换、统计表格、生成图表/PPT/Excel、清洗抓来的数据——用的就是 AstrBot 自带的 pandas/numpy/python-docx/openpyxl/python-pptx/Pillow。
 - **只对主人的账号开放**（`exec.owner_ids`，留空=谁都不能用）：群友调用直接拒绝并记审计；另有限时强杀、输出与代码长度上限。

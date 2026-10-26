@@ -20,6 +20,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .textutil import truncate_keep_ends
+
 
 class ExecError(Exception):
     """脚本执行失败（信息面向模型可读）。"""
@@ -126,6 +128,6 @@ async def run_python(
     elapsed = asyncio.get_event_loop().time() - started
 
     text = (raw or b"").decode("utf-8", errors="replace")
-    if len(text) > max_output_chars:
-        text = text[:max_output_chars] + f"\n…（输出过长，已截断到 {max_output_chars} 字）"
+    # 0.5.0：保留首尾——异常堆栈的最后一行、print 的结果常常就在结尾
+    text = truncate_keep_ends(text, max_output_chars)
     return ExecResult(ok=code_int == 0, code=code_int, output=text.strip(), seconds=elapsed, script=script.name)

@@ -2,4 +2,4 @@
 
 PLUGIN_NAME = "astrbot_plugin_cognition"
 PLUGIN_DISPLAY = "为你而在的认知"
-PLUGIN_VERSION = "alpha-0.4.0"
+PLUGIN_VERSION = "alpha-0.5.0"

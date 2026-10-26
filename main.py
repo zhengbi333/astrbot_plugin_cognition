@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from astrbot.api.star import Context, Star, StarTools
 
 from . import PLUGIN_DISPLAY, PLUGIN_NAME, PLUGIN_VERSION
 from . import shell as shell_mod
+from . import tasks as tasks_mod
 from . import web as web_mod
 from . import notes as notes_mod
 from . import exec as exec_mod
@@ -70,6 +72,13 @@ class CognitionPlugin(Star):
             logger.warning("[Toolbox] 初始化工作区说明失败: %s", exc)
 
     async def terminate(self) -> None:
+        manager = getattr(self, "_task_manager", None)
+        if manager is not None:
+            try:
+                await manager.shutdown()
+                logger.info("[Toolbox] 后台任务已清理")
+            except Exception as exc:
+                logger.warning("[Toolbox] 清理后台任务失败: %s", exc)
         logger.info("[Toolbox] %s 已停止", PLUGIN_DISPLAY)
 
     # ------------------------------------------------------------ 配置读取
@@ -122,12 +131,41 @@ class CognitionPlugin(Star):
             )
         return self._workspace
 
+    @property
+    def tasks(self) -> tasks_mod.TaskManager:
+        """后台任务表（首次使用时按当前配置创建）。"""
+        manager = getattr(self, "_task_manager", None)
+        if manager is None:
+            manager = tasks_mod.TaskManager(
+                self.workspace_root,
+                max_concurrent=self._int("tasks.max_concurrent", 2),
+                max_age_seconds=self._float("tasks.max_age_seconds", 1800.0),
+                log_tail_chars=self._int("tasks.log_tail_chars", 2000),
+                python=sys.executable or None,
+            )
+            self._task_manager = manager
+        return manager
+
     def _quota_left(self) -> int:
+        """今天还剩多少次工具调用额度（0 = 用完了，-1 = 不限制）。"""
         return self._quota.left(self._int("limits.daily_calls", 200))
 
     def _note_call(self, tool: str, ok: bool, detail: str = "") -> None:
         self._quota.bump(tool)
         self._audit.note(tool, ok, detail)
+
+    def _owner_denied(self, event: Any, *, tool: str = "script") -> str:
+        """owner 门禁：名单为空 = 谁都不许（绝不等于所有人）。返回空串表示放行。"""
+        sender = ""
+        try:
+            sender = str(event.get_sender_id() or "")
+        except Exception:
+            sender = ""
+        owners = exec_mod.parse_owners(self._str("exec.owner_ids", ""))
+        if exec_mod.is_owner(sender, owners):
+            return ""
+        self._note_call(tool, False, f"非 owner：{sender or '未知'}")
+        return "这个工具只对主人开放（要写代码跑任务的权限不能给所有人）。"
 
     def _gate(self, tool: str, enabled_key: str) -> str:
         """统一门禁：总开关 → 分项开关 → 每日配额。返回空串表示放行，否则返回拒绝文案。"""
@@ -714,15 +752,9 @@ class CognitionPlugin(Star):
         block = self._gate("python", "exec.enabled")
         if block:
             return block
-        sender = ""
-        try:
-            sender = str(event.get_sender_id() or "")
-        except Exception:
-            sender = ""
-        owners = exec_mod.parse_owners(self._str("exec.owner_ids", ""))
-        if not exec_mod.is_owner(sender, owners):
-            self._note_call("python", False, f"非 owner：{sender or '未知'}")
-            return "这个工具只对主人开放（要写代码跑任务的权限不能给所有人）。"
+        denied = self._owner_denied(event, tool="python")
+        if denied:
+            return denied
         code = str(kwargs.get("code") or "")
         try:
             timeout = float(kwargs.get("timeout") or self._float("exec.timeout_seconds", 30.0))
@@ -753,6 +785,106 @@ class CognitionPlugin(Star):
             f"脚本{state}，用时 {result.seconds:.1f}s（{digest}｜{head}）\n"
             f"--- 输出 ---\n{body}"
         )
+
+    # ------------------------------------------------------------ 工具：后台任务（仅 owner）
+    @filter.llm_tool(name="toolbox_task_start")
+    async def toolbox_task_start_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """把一段**耗时**的 Python 脚本丢到后台跑，立刻拿到任务号，不占用对话。
+
+        什么时候用：可能超过一两分钟的活（批量处理、爬取、生成大文件、渲染），
+        或者你想先起个头、过一会儿再看结果。短活仍用 toolbox_python 更省事。
+
+        结果要 print 出来或写文件，之后用 toolbox_task_status 查。
+
+        Args:
+            code(string): 完整可运行的 Python 代码。
+            label(string): 这个任务的名字，方便以后认，可省略。
+        """
+        block = self._gate("task_start", "exec.enabled")
+        if block:
+            return block
+        denied = self._owner_denied(event)
+        if denied:
+            return denied
+        code = str(kwargs.get("code") or "")
+        label = str(kwargs.get("label") or "").strip()
+        try:
+            record = await self.tasks.start(code, max_code_chars=self._int("exec.max_code_chars", 20000))
+        except tasks_mod.TaskError as exc:
+            self._note_call("task_start", False, str(exc))
+            return f"没起成后台任务：{exc}"
+        except Exception as exc:
+            self._note_call("task_start", False, str(exc))
+            return f"起后台任务时出错：{type(exc).__name__}: {exc}"
+        self._note_call("task_start", True, f"{record.task_id} {label}".strip())
+        head = f"已在后台开始跑（任务号 {record.task_id}"
+        if label:
+            head += f"，名字「{label}」"
+        head += "）。"
+        return (
+            f"{head}\n用 toolbox_task_status(task_id=\"{record.task_id}\") 看进度；"
+            "跑完了它会给你退出码和输出。"
+        )
+
+    @filter.llm_tool(name="toolbox_task_status")
+    async def toolbox_task_status_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """查一个后台任务：还在跑吗、跑了多久、退出码是多少、最近的输出是什么。
+
+        Args:
+            task_id(string): 任务号（启动时返回的，例如 160233-a1b2）。
+        """
+        block = self._gate("task_status", "exec.enabled")
+        if block:
+            return block
+        denied = self._owner_denied(event)
+        if denied:
+            return denied
+        task_id = str(kwargs.get("task_id") or "").strip()
+        try:
+            await self.tasks.cleanup()
+            record = self.tasks.get(task_id)
+        except tasks_mod.TaskError as exc:
+            self._note_call("task_status", False, str(exc))
+            return str(exc)
+        except Exception as exc:
+            self._note_call("task_status", False, str(exc))
+            return f"查任务出错：{type(exc).__name__}: {exc}"
+        self._note_call("task_status", True, record.task_id)
+        if record.running:
+            state = f"还在跑（已 {record.seconds:.1f}s）"
+        else:
+            state = f"已结束（退出码 {record.returncode if record.returncode is not None else '未知'}）"
+        if record.note:
+            state += f"；{record.note}"
+        body = self.tasks.tail(record)
+        return f"任务 {record.task_id}：{state}\n--- 最近输出 ---\n{body}"
+
+    @filter.llm_tool(name="toolbox_task_stop")
+    async def toolbox_task_stop_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """停掉一个后台任务（强杀），用于跑歪了或不需要了的情况。
+
+        Args:
+            task_id(string): 任务号。
+        """
+        block = self._gate("task_stop", "exec.enabled")
+        if block:
+            return block
+        denied = self._owner_denied(event)
+        if denied:
+            return denied
+        task_id = str(kwargs.get("task_id") or "").strip()
+        try:
+            record = await self.tasks.stop(task_id)
+        except tasks_mod.TaskError as exc:
+            self._note_call("task_stop", False, str(exc))
+            return str(exc)
+        except Exception as exc:
+            self._note_call("task_stop", False, str(exc))
+            return f"停任务出错：{type(exc).__name__}: {exc}"
+        self._note_call("task_stop", True, record.task_id)
+        if record.running:
+            return f"任务 {record.task_id} 好像还在跑，再查一次确认。"
+        return f"任务 {record.task_id} 已停止（退出码 {record.returncode if record.returncode is not None else '未知'}）。"
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")
