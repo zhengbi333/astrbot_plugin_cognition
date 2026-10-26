@@ -39,6 +39,15 @@ _TOOL_TITLES = {
     "fs_search": "搜内容",
     "web_fetch": "抓网页",
     "web_search": "联网搜索",
+    "learn": "汲取经验",
+    "doc_read": "读文档",
+    "doc_write": "写文档",
+    "send_file": "发送文件",
+    "audit": "调用审计",
+    "python": "跑脚本",
+    "task_start": "启动后台任务",
+    "task_status": "查后台任务",
+    "task_stop": "停后台任务",
     "download": "下载文件",
     "shell_run": "执行命令",
 }
@@ -56,12 +65,19 @@ class CognitionPlugin(Star):
         self.workspace_root = self.data_dir / "workspace"
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self._workspace: Workspace | None = None
-        self._audit = AuditLog(capacity=80)
+        # P1-3：审计同时落盘（audit.jsonl），重启后仍能回答"你之前动过什么"
+        self._audit = AuditLog(capacity=80, path=self.data_dir / "audit.jsonl")
         self._quota = Quota()
         logger.info("[Toolbox] %s %s 已加载，工作区=%s", PLUGIN_DISPLAY, PLUGIN_VERSION, self.workspace_root)
 
     # ------------------------------------------------------------ 生命周期
     async def initialize(self) -> None:
+        try:
+            loaded = self._audit.load()
+            if loaded:
+                logger.info("[Toolbox] 已从 audit.jsonl 载入 %s 条历史审计", loaded)
+        except Exception as exc:
+            logger.warning("[Toolbox] 载入历史审计失败（忽略）: %s", exc)
         try:
             (self.workspace_root / "README.txt").write_text(
                 "这是「为你动手的工具箱」的工作区。\n"
@@ -607,8 +623,10 @@ class CognitionPlugin(Star):
 
         Args:
             path(string): 相对文件路径，扩展名决定格式，例如 "notes/report.docx"。
-            content(string): docx 写正文（一行一段，"- " 开头为列表）；xlsx 写表格（每行用 | 分隔单元格）。
-            title(string): docx 的标题，可省略。
+            content(string): docx 写正文（一行一段，"- " 开头为列表）；xlsx 写表格（每行用 | 分隔单元格）；
+                pptx 写幻灯片大纲（单独一行 --- 分页，# 开头是页标题，- 开头是要点）。
+            title(string): docx 的标题 / pptx 的封面标题，可省略。
+            subtitle(string): pptx 封面的副标题，可省略。
             sheet_name(string): xlsx 的工作表名，可省略。
         """
         block = self._gate("doc_write", "fs.enabled")
@@ -620,6 +638,7 @@ class CognitionPlugin(Star):
         content = str(kwargs.get("content") or "")
         title = str(kwargs.get("title") or "").strip()
         sheet_name = str(kwargs.get("sheet_name") or "Sheet1").strip() or "Sheet1"
+        subtitle = str(kwargs.get("subtitle") or "").strip()
         if not path:
             return "要给个文件名，例如 notes/report.docx。"
         try:
@@ -643,8 +662,10 @@ class CognitionPlugin(Star):
                 slides = office_mod.parse_slides(content)
                 if not slides:
                     return "幻灯片内容是空的，没写。"
+                # P1-4：副标题用独立参数；旧调用若把内容塞在 sheet_name 里仍兼容
+                _subtitle = subtitle or (sheet_name if sheet_name != "Sheet1" else "")
                 count = office_mod.write_pptx(
-                    target, slides, title=title, subtitle=sheet_name if sheet_name != "Sheet1" else ""
+                    target, slides, title=title, subtitle=_subtitle
                 )
                 size = target.stat().st_size
                 self._note_call("doc_write", True, path)
@@ -899,7 +920,7 @@ class CognitionPlugin(Star):
             return block
         command = str(kwargs.get("command") or "").strip()
         try:
-            allow = shell_mod.parse_allowlist(self._str("shell.allowlist", "git"))
+            allow = shell_mod.parse_allowlist(self._str("shell.allowlist", ""))
             code, output = await shell_mod.run_command(
                 command,
                 allowlist=allow,

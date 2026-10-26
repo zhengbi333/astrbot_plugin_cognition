@@ -49,7 +49,7 @@ class TaskRecord:
     proc: asyncio.subprocess.Process | None = None
     log_handle: object | None = None
     returncode: int | None = None
-    killer: asyncio.Task | None = None
+    watcher: asyncio.Task | None = None
     note: str = ""
 
     @property
@@ -135,12 +135,16 @@ class TaskManager:
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+        # P0-2：stdout 重定向到文件时默认是块缓冲，模型写的普通 print 会攒在缓冲里，
+        # 导致 task_status 长时间显示"还没有输出"（看起来像卡死）。
+        # 用 PYTHONUNBUFFERED + -u 双保险，且**不改脚本本身**（避免 traceback 行号偏移）。
+        env["PYTHONUNBUFFERED"] = "1"
         env.pop("ASTRBOT_CONFIG", None)
 
         handle = open(log, "wb")
         try:
             proc = await asyncio.create_subprocess_exec(
-                self.python, "-X", "utf8", str(script),
+                self.python, "-u", "-X", "utf8", str(script),
                 cwd=str(self.root),
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=handle,
@@ -156,7 +160,7 @@ class TaskManager:
 
         record = TaskRecord(task_id=task_id, script=script, log=log, started=_now(),
                             proc=proc, log_handle=handle)
-        record.killer = asyncio.ensure_future(self._watch(record))
+        record.watcher = asyncio.ensure_future(self._watch(record))
         self._tasks[task_id] = record
         self._trim()
         return record
@@ -231,18 +235,50 @@ class TaskManager:
         for record in finished[self.max_kept // 2:]:
             self._tasks.pop(record.task_id, None)
 
-    async def shutdown(self) -> None:
-        """插件停止：杀掉所有还在跑的任务。"""
+    def _close_handles(self) -> None:
+        """只关闭句柄，不动进程（用于插件重载）。"""
         for record in list(self._tasks.values()):
-            if record.running:
-                try:
-                    record.proc.kill()  # type: ignore[union-attr]
-                except Exception:
-                    pass
             try:
                 if record.log_handle is not None:
                     record.log_handle.close()  # type: ignore[attr-defined]
                     record.log_handle = None
             except Exception:
                 pass
+
+    async def shutdown(self) -> None:
+        """插件重载/停止：**不杀正在跑的任务**，只关句柄并清掉已结束的记录。
+
+        为什么不杀：AstrBot 保存配置、重载插件都会走 terminate()。如果这里 kill，
+        用户改一个配置项就会把正在跑的长任务杀掉，且毫无提示。
+
+        为什么不清空：清空后 kill_all() 就再也管不到这些孤儿进程了。
+        运行中的记录必须留着，让调用方仍能查到、能停。
+        """
+        for task_id, record in list(self._tasks.items()):
+            try:
+                if record.log_handle is not None:
+                    record.log_handle.close()  # type: ignore[attr-defined]
+                    record.log_handle = None
+            except Exception:
+                pass
+            if not record.running:
+                self._tasks.pop(task_id, None)
+
+    async def kill_all(self) -> list[str]:
+        """显式停止所有正在跑的任务（供"我确实要全停"的场合）。"""
+        killed: list[str] = []
+        for record in list(self._tasks.values()):
+            if record.running:
+                try:
+                    record.proc.kill()  # type: ignore[union-attr]
+                    killed.append(record.task_id)
+                except Exception:
+                    pass
+                try:
+                    await asyncio.wait_for(record.proc.wait(), timeout=3)  # type: ignore[union-attr]
+                except Exception:
+                    pass
+                self._finalize(record)
+        self._close_handles()
         self._tasks.clear()
+        return killed

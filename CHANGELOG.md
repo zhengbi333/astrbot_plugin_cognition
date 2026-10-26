@@ -1,6 +1,13 @@
 # 更新日志
 
-## alpha-0.5.0（当前）
+## alpha-0.6.0（当前）
+
+- **验收整改**：后台任务强制无缓冲（不再"看起来卡死"）、重载插件不再杀任务（新增 `kill_all`）、shell 升级为「程序+只读子命令+拒危险参数」三层校验且默认白名单改为空。
+- 打转计数跨轮累计、历史工具结果自动压缩、审计落盘 `audit.jsonl`（重启可查）、`doc_write` 独立 `subtitle`。
+- 新增真驱动循环的 `audit_63`（15/15）与 `audit_64`（21/21）；单测 134 → **149/149**。
+- 抓出并修掉两个真 bug：`_compact_tool_messages` 缺 `import json`（一压缩就崩）、`shutdown()` 清空任务表导致孤儿进程失控。详见 [changelogs/alpha-0.6.0.md](changelogs/alpha-0.6.0.md)。
+
+## alpha-0.5.0
 
 - **后台任务**：新增 `toolbox_task_start` / `toolbox_task_status` / `toolbox_task_stop`，耗时脚本丢后台跑、按需查输出与退出码、可随时停；owner-only，并发 2、存活 1800 秒自动清理，日志写文件不占内存。
 - **长输出改为保首尾截断**（前 70% + 省略标记 + 后 30%），不再把异常堆栈最后一行砍掉。

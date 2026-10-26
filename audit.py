@@ -6,9 +6,11 @@ Bot 到底动过什么、今天还剩多少额度。逻辑从 main.py 抽出来�
 
 from __future__ import annotations
 
+import json
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -30,9 +32,16 @@ class AuditEntry:
 class AuditLog:
     """定长环形日志：只保留最近 N 条，内存占用可预期。"""
 
-    def __init__(self, capacity: int = 60) -> None:
+    def __init__(
+        self,
+        capacity: int = 60,
+        path: Path | str | None = None,
+        max_file_bytes: int = 2 * 1024 * 1024,
+    ) -> None:
         self.capacity = max(1, int(capacity))
         self._items: list[AuditEntry] = []
+        self.path = Path(path) if path else None
+        self.max_file_bytes = max(64 * 1024, int(max_file_bytes))
 
     def note(self, tool: str, ok: bool, detail: str = "", *, when: float | None = None) -> AuditEntry:
         entry = AuditEntry(
@@ -44,7 +53,61 @@ class AuditLog:
         self._items.append(entry)
         if len(self._items) > self.capacity:
             del self._items[: len(self._items) - self.capacity]
+        self._append_file(entry)
         return entry
+
+    # ------------------------------------------------------------ 落盘
+    def _append_file(self, entry: AuditEntry) -> None:
+        """把一条记录追加到 jsonl（失败不影响主流程）。"""
+        if self.path is None:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            if self.path.exists() and self.path.stat().st_size > self.max_file_bytes:
+                self._rotate()
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def _rotate(self) -> None:
+        """文件过大时只保留后半部分（避免无限增长）。"""
+        try:
+            data = self.path.read_text(encoding="utf-8", errors="replace").splitlines()
+            keep = data[len(data) // 2:]
+            self.path.write_text("\n".join(keep) + ("\n" if keep else ""), encoding="utf-8")
+        except OSError:
+            pass
+
+    def load(self) -> int:
+        """从 jsonl 载入最近若干条到内存（用于重启后仍能查询）。返回载入条数。"""
+        if self.path is None or not self.path.exists():
+            return 0
+        try:
+            lines = self.path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return 0
+        loaded = 0
+        for line in lines[-self.capacity:]:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                data = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            self._items.append(
+                AuditEntry(
+                    time=str(data.get("time") or ""),
+                    tool=str(data.get("tool") or "?"),
+                    ok=bool(data.get("ok")),
+                    detail=str(data.get("detail") or "")[:200],
+                )
+            )
+            loaded += 1
+        if len(self._items) > self.capacity:
+            del self._items[: len(self._items) - self.capacity]
+        return loaded
 
     def recent(self, limit: int = 20) -> list[AuditEntry]:
         count = max(1, int(limit))

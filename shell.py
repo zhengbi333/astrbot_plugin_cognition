@@ -57,6 +57,65 @@ def _normalize_program(token: str) -> str:
     return base
 
 
+# P0-4：光看程序名不够——`git` 这类"合法程序"本身就能变成任意执行入口
+# （`git -c alias.x='!calc' x`、`git --exec-path=...`、`git config` 写配置）。
+# 所以对已知的危险程序再加一层「子命令 + 参数」校验。
+_PROGRAM_RULES: dict[str, dict] = {
+    "git": {
+        "readonly_subcommands": {
+            "status", "log", "diff", "show", "rev-parse", "describe",
+            "branch", "ls-files", "blame", "shortlog", "cat-file", "ls-tree",
+        },
+        "deny_flags": {
+            "-c", "--exec-path", "--config-env", "--upload-pack", "--receive-pack",
+            "--git-dir", "--work-tree", "-C", "--namespace",
+        },
+    },
+}
+
+
+def check_command(argv: list[str], allowlist: set[str]) -> None:
+    """三层校验：程序名在白名单 → 子命令属于只读集合 → 参数里没有危险开关。不通过抛 ShellError。"""
+    if not argv:
+        raise ShellError("没有给命令")
+    program_token = argv[0]
+    if any(sep in program_token for sep in ("/", "\\")):
+        raise ShellError("程序名不要带路径（只写名字，如 git）")
+    name = _normalize_program(program_token)
+    if name in _ALWAYS_DENY:
+        raise ShellError(f"拒绝执行：{name} 属于高危命令（可在白名单里也无效）")
+    if name not in allowlist:
+        allowed = "、".join(sorted(allowlist)) or "（空）"
+        raise ShellError(f"命令未在白名单内：{name}；当前允许：{allowed}")
+
+    rule = _PROGRAM_RULES.get(name)
+    if not rule:
+        return
+
+    args = argv[1:]
+    subcommand = ""
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        subcommand = arg
+        break
+    allowed_subs = rule.get("readonly_subcommands") or set()
+    if not subcommand:
+        raise ShellError(f"{name} 只允许只读子命令：{'、'.join(sorted(allowed_subs))}")
+    if subcommand not in allowed_subs:
+        raise ShellError(
+            f"{name} 子命令 {subcommand} 不在只读范围内；允许：{'、'.join(sorted(allowed_subs))}"
+        )
+    deny = rule.get("deny_flags") or set()
+    for arg in args:
+        text = str(arg)
+        if text.startswith("!"):
+            raise ShellError("拒绝以 ! 开头的参数（等价于执行外部命令）")
+        flag = text.split("=", 1)[0]
+        if text in deny or flag in deny:
+            raise ShellError(f"拒绝危险开关：{text}")
+
+
 def split_command(command: str) -> list[str]:
     """把命令行拆成参数列表（不经过 shell；Windows 路径的反斜杠按字面处理）。"""
     text = str(command or "").strip()
@@ -82,15 +141,7 @@ async def run_command(
 ) -> tuple[int, str]:
     """执行白名单内的命令，返回 (退出码, 输出文本)。"""
     argv = split_command(command)
-    program_token = argv[0]
-    if any(sep in program_token for sep in ("/", "\\")):
-        raise ShellError("程序名不要带路径（只写名字，如 git）")
-    name = _normalize_program(program_token)
-    if name in _ALWAYS_DENY:
-        raise ShellError(f"拒绝执行：{name} 属于高危命令（可在白名单里也无效）")
-    if name not in allowlist:
-        allowed = "、".join(sorted(allowlist)) or "（空）"
-        raise ShellError(f"命令未在白名单内：{name}；当前允许：{allowed}")
+    check_command(argv, allowlist)
 
     workdir = Path(cwd)
     workdir.mkdir(parents=True, exist_ok=True)

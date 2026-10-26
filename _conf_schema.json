@@ -259,13 +259,13 @@
         "description": "启用命令执行",
         "type": "bool",
         "default": false,
-        "hint": "⚠️ 风险最高的一项：聊天窗口后面是群里的所有人。默认关闭。开启后也只允许白名单里的程序，且拒绝 bash/cmd/powershell/python 等高危入口。"
+        "hint": "⚠️ 风险最高的一项：聊天窗口后面是群里的所有人。默认关闭。开启后也只允许白名单里的程序，且 git 只放行只读子命令、拒绝危险开关；bash/cmd/powershell/python/node 等高危入口写进白名单也一律拒绝。"
       },
       "allowlist": {
         "description": "程序白名单",
         "type": "string",
-        "default": "git",
-        "hint": "逗号分隔的程序名，只写名字不带路径，例如：git, ffmpeg。绝对不要加 shell/python/node——它们等于任意执行。"
+        "default": "",
+        "hint": "逗号分隔的程序名，只写名字不带路径。**默认留空（谁都不能跑）**。注意：像 git 这种程序本身能变成任意执行入口，所以内置了三层校验——程序名在白名单 + 子命令属于只读集合（status/log/diff/show/rev-parse/branch/ls-files 等）+ 拒绝 -c/--exec-path/--upload-pack/--git-dir 等危险开关。绝对不要加 shell/python/node/bat——它们等于任意执行。"
       },
       "timeout_seconds": {
         "description": "命令超时（秒）",
