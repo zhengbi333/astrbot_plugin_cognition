@@ -125,6 +125,24 @@
       }
     }
   },
+  "send": {
+    "description": "发送文件到会话",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "允许把工作区文件发出去",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后模型可以用 toolbox_send_file 把工作区里的文件发到当前聊天（例如「把整理好的文档发我」）。只能发工作区内的文件，发不到系统别处。"
+      },
+      "max_bytes": {
+        "description": "单文件上限（字节）",
+        "type": "int",
+        "default": 52428800,
+        "hint": "默认 50MB，超过就拒发并说明。"
+      }
+    }
+  },
   "notes": {
     "description": "经验条目",
     "type": "object",
@@ -164,6 +182,12 @@
         "type": "int",
         "default": 8000,
         "hint": "避免把长文档塞满上下文。"
+      },
+      "max_slides": {
+        "description": "pptx 最多读多少页",
+        "type": "int",
+        "default": 30,
+        "hint": "读取 PowerPoint 时的页数上限，超出截断。"
       }
     }
   },

@@ -178,6 +178,140 @@ def write_xlsx(path: Path, rows: list[list], *, sheet_name: str = "Sheet1") -> i
     return written
 
 
+def pptx_available() -> bool:
+    try:
+        import pptx  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _require_pptx():
+    try:
+        from pptx import Presentation  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise OfficeError("缺少 python-pptx 依赖，无法读写 .pptx") from exc
+    return Presentation
+
+
+def parse_slides(raw: str) -> list[tuple[str, list[str]]]:
+    """把"简单大纲"解析成幻灯片列表 `[(页标题, [要点...]), ...]`。
+
+    约定（写给模型看的，越简单越好）：
+    - 用单独一行 `---` 分隔每一页；
+    - 以 `#` 开头的行是这一页的标题（去掉 # 号）；
+    - 以 `- ` 或 `* ` 开头的行是要点；
+    - 其余非空行当作正文要点（不加项目符号时也能用）。
+    """
+    slides: list[tuple[str, list[str]]] = []
+    title = ""
+    bullets: list[str] = []
+
+    def flush() -> None:
+        nonlocal title, bullets
+        if title or bullets:
+            slides.append((title, bullets))
+        title, bullets = "", []
+
+    for line in str(raw or "").splitlines():
+        text = line.rstrip()
+        stripped = text.strip()
+        if not stripped:
+            continue
+        if stripped in ("---", "***", "___"):
+            flush()
+            continue
+        if stripped.startswith("#"):
+            # 已有一页内容时，遇到新标题视为换页
+            if title or bullets:
+                flush()
+            title = stripped.lstrip("#").strip()
+            continue
+        if stripped.startswith(("- ", "* ", "• ")):
+            bullets.append(stripped[2:].strip())
+            continue
+        bullets.append(stripped)
+    flush()
+    return slides
+
+
+def write_pptx(path: Path, slides: list[tuple[str, list[str]]], *, title: str = "", subtitle: str = "") -> int:
+    """按"标题+要点"生成 pptx，返回页数（不含封面）。"""
+    Presentation = _require_pptx()
+    prs = Presentation()
+    if title:
+        cover = prs.slides.add_slide(prs.slide_layouts[0])
+        cover.shapes.title.text = title
+        if subtitle and len(cover.placeholders) > 1:
+            try:
+                cover.placeholders[1].text = subtitle
+            except Exception:
+                pass
+    count = 0
+    for slide_title, bullets in slides or []:
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        try:
+            slide.shapes.title.text = slide_title or "（无标题）"
+        except Exception:
+            pass
+        body = None
+        for placeholder in slide.placeholders:
+            if placeholder.placeholder_format.idx != 0:
+                body = placeholder
+                break
+        if body is None:
+            continue
+        frame = body.text_frame
+        first = True
+        for bullet in bullets or [""]:
+            text = str(bullet).strip()
+            if not text:
+                continue
+            if first:
+                frame.text = text
+                first = False
+            else:
+                para = frame.add_paragraph()
+                para.text = text
+        count += 1
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        prs.save(str(path))
+    except Exception as exc:
+        raise OfficeError(f"保存 pptx 失败：{type(exc).__name__}: {str(exc)[:120]}") from exc
+    return count
+
+
+def read_pptx(path: Path, *, max_slides: int = 30, max_chars: int = 6000) -> DocReadResult:
+    """读 pptx 的文字：每页标题 + 各形状里的文本行。"""
+    Presentation = _require_pptx()
+    try:
+        prs = Presentation(str(path))
+    except Exception as exc:
+        raise OfficeError(f"打不开 pptx：{type(exc).__name__}: {str(exc)[:120]}") from exc
+    chunks: list[str] = []
+    used = 0
+    total = 0
+    for index, slide in enumerate(prs.slides, 1):
+        total += 1
+        if index > max_slides or used >= max_chars:
+            chunks.append("…（页数过多，已截断）")
+            break
+        lines: list[str] = []
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for para in shape.text_frame.paragraphs:
+                text = "".join(run.text for run in para.runs).strip()
+                if text:
+                    lines.append(text)
+        if lines:
+            block = f"[第 {index} 页]\n" + "\n".join(lines)
+            chunks.append(block)
+            used += len(block)
+    return DocReadResult(kind="pptx", paragraphs=total, tables=0, text="\n\n".join(chunks))
+
+
 def parse_rows(raw: str) -> list[list]:
     """把模型给的简单表格文本解析成行列表。
 

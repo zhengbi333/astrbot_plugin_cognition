@@ -532,13 +532,27 @@ class CognitionPlugin(Star):
                     max_rows=self._int("office.max_rows", 40),
                     max_chars=self._int("office.max_chars", 8000),
                 )
+            elif suffix == ".pptx":
+                result = office_mod.read_pptx(
+                    target,
+                    max_slides=self._int("office.max_slides", 30),
+                    max_chars=self._int("office.max_chars", 8000),
+                )
             else:
-                return f"只支持 .docx / .xlsx，这个是 {suffix or '无扩展名'}；普通文本请用 toolbox_fs_read。"
+                return (
+                    f"只支持 .docx / .xlsx / .pptx，这个是 {suffix or '无扩展名'}；"
+                    "普通文本请用 toolbox_fs_read。"
+                )
             self._note_call("doc_read", True, path)
             if not result.text.strip():
                 return f"「{path}」里没有读到内容（{result.kind}）。"
             summary = f"「{path}」（{result.kind}，"
-            summary += f"{result.paragraphs} 段/行" if result.kind == "docx" else f"{result.tables} 个工作表、{result.paragraphs} 行"
+            if result.kind == "docx":
+                summary += f"{result.paragraphs} 段"
+            elif result.kind == "pptx":
+                summary += f"{result.paragraphs} 页"
+            else:
+                summary += f"{result.tables} 个工作表、{result.paragraphs} 行"
             summary += f"）：\n{result.text}"
             return summary
         except (office_mod.OfficeError, WorkspaceError) as exc:
@@ -586,7 +600,23 @@ class CognitionPlugin(Star):
                 size = target.stat().st_size
                 self._note_call("doc_write", True, path)
                 return f"已生成「{self.workspace.relpath(target)}」（xlsx，{count} 行，{human_size(size)}）。"
-            return f"只支持 .docx / .xlsx，这个是 {suffix or '无扩展名'}；纯文本请用 toolbox_fs_write。"
+            if suffix == ".pptx":
+                slides = office_mod.parse_slides(content)
+                if not slides:
+                    return "幻灯片内容是空的，没写。"
+                count = office_mod.write_pptx(
+                    target, slides, title=title, subtitle=sheet_name if sheet_name != "Sheet1" else ""
+                )
+                size = target.stat().st_size
+                self._note_call("doc_write", True, path)
+                return (
+                    f"已生成「{self.workspace.relpath(target)}」（pptx，{count} 页正文"
+                    + ("，含封面" if title else "") + f"，{human_size(size)}）。"
+                )
+            return (
+                f"只支持 .docx / .xlsx / .pptx，这个是 {suffix or '无扩展名'}；"
+                "纯文本请用 toolbox_fs_write。"
+            )
         except (office_mod.OfficeError, WorkspaceError) as exc:
             self._note_call("doc_write", False, str(exc))
             return f"写文档失败：{exc}"
@@ -615,6 +645,51 @@ class CognitionPlugin(Star):
         if stats["by_tool"]:
             lines.append("按工具：" + "、".join(f"{k}×{v}" for k, v in sorted(stats["by_tool"].items())))
         return "\n".join(lines)
+
+    # ------------------------------------------------------------ 工具：发文件
+    @filter.llm_tool(name="toolbox_send_file")
+    async def toolbox_send_file_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """把工作区里的一个文件发到当前会话（对方能直接收到这个文件）。
+
+        用于"把这个文档发我""把刚做的 PPT 发过来""把下载的东西发出来"这类要求。
+
+        Args:
+            path(string): 工作区内的相对路径，例如 "reports/周报.docx"。
+            caption(string): 随文件一起说的一句话，可省略。
+        """
+        block = self._gate("send_file", "send.enabled")
+        if block:
+            return block
+        path = str(kwargs.get("path") or "").strip()
+        caption = str(kwargs.get("caption") or "").strip()
+        try:
+            target = self.workspace.resolve(path, must_exist=True)
+            if target.is_dir():
+                return "这是目录，不能当文件发。"
+            size = target.stat().st_size
+            limit = self._int("send.max_bytes", 52428800)
+            if limit > 0 and size > limit:
+                return f"文件太大（{human_size(size)}，上限 {human_size(limit)}），没发。"
+            from astrbot.api.event import MessageChain
+            from astrbot.api.message_components import File
+
+            chain = MessageChain()
+            chain.chain.append(File(file=str(target)))
+            if caption:
+                chain.message(caption)
+            session_id = str(getattr(event, "unified_msg_origin", "") or "")
+            sender = getattr(self.context, "send_message", None)
+            if not callable(sender) or not session_id:
+                return "拿不到当前会话，没法把文件发出去。"
+            await sender(session_id, chain)
+            self._note_call("send_file", True, path)
+            return f"已把「{self.workspace.relpath(target)}」（{human_size(size)}）发到这个会话。"
+        except WorkspaceError as exc:
+            self._note_call("send_file", False, str(exc))
+            return f"发文件失败：{exc}"
+        except Exception as exc:
+            self._note_call("send_file", False, str(exc))
+            return f"发文件出错：{type(exc).__name__}: {exc}"
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")
