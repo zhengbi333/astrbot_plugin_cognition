@@ -125,6 +125,48 @@
       }
     }
   },
+  "notes": {
+    "description": "经验条目",
+    "type": "object",
+    "items": {
+      "dir": {
+        "description": "存放目录",
+        "type": "string",
+        "default": "notes",
+        "hint": "toolbox_learn 把整理好的经验写到这里（工作区内的相对目录）。"
+      },
+      "max_chars": {
+        "description": "单条正文上限（字）",
+        "type": "int",
+        "default": 6000,
+        "hint": "超过就截断，避免单条经验过大。"
+      }
+    }
+  },
+  "office": {
+    "description": "Office 文档",
+    "type": "object",
+    "items": {
+      "max_paragraphs": {
+        "description": "docx 最多读多少段",
+        "type": "int",
+        "default": 200,
+        "hint": "超出截断。"
+      },
+      "max_rows": {
+        "description": "xlsx 每表最多读多少行",
+        "type": "int",
+        "default": 40,
+        "hint": "超出截断。"
+      },
+      "max_chars": {
+        "description": "文档返回上限（字）",
+        "type": "int",
+        "default": 8000,
+        "hint": "避免把长文档塞满上下文。"
+      }
+    }
+  },
   "shell": {
     "description": "执行命令（高危，默认关）",
     "type": "object",

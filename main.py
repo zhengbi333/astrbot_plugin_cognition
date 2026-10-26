@@ -23,6 +23,9 @@ from astrbot.api.star import Context, Star, StarTools
 from . import PLUGIN_DISPLAY, PLUGIN_NAME, PLUGIN_VERSION
 from . import shell as shell_mod
 from . import web as web_mod
+from . import notes as notes_mod
+from . import office as office_mod
+from .audit import AuditLog, Quota
 from .workspace import Workspace, WorkspaceError, human_size, safe_filename_from_url
 
 _TOOL_TITLES = {
@@ -50,8 +53,8 @@ class CognitionPlugin(Star):
         self.workspace_root = self.data_dir / "workspace"
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self._workspace: Workspace | None = None
-        self._usage: dict[str, int] = {}
-        self._audit: list[dict[str, Any]] = []
+        self._audit = AuditLog(capacity=80)
+        self._quota = Quota()
         logger.info("[Toolbox] %s %s 已加载，工作区=%s", PLUGIN_DISPLAY, PLUGIN_VERSION, self.workspace_root)
 
     # ------------------------------------------------------------ 生命周期
@@ -118,29 +121,12 @@ class CognitionPlugin(Star):
             )
         return self._workspace
 
-    def _today(self) -> str:
-        return time.strftime("%Y-%m-%d", time.localtime())
-
     def _quota_left(self) -> int:
-        limit = self._int("limits.daily_calls", 200)
-        if limit <= 0:
-            return -1
-        used = self._usage.get(f"{self._today()}:total", 0)
-        return max(0, limit - used)
+        return self._quota.left(self._int("limits.daily_calls", 200))
 
     def _note_call(self, tool: str, ok: bool, detail: str = "") -> None:
-        day = self._today()
-        self._usage[f"{day}:total"] = self._usage.get(f"{day}:total", 0) + 1
-        self._usage[f"{day}:{tool}"] = self._usage.get(f"{day}:{tool}", 0) + 1
-        self._audit.append(
-            {
-                "time": time.strftime("%H:%M:%S", time.localtime()),
-                "tool": tool,
-                "ok": bool(ok),
-                "detail": str(detail or "")[:200],
-            }
-        )
-        del self._audit[:-60]
+        self._quota.bump(tool)
+        self._audit.note(tool, ok, detail)
 
     def _gate(self, tool: str, enabled_key: str) -> str:
         """统一门禁：总开关 → 分项开关 → 每日配额。返回空串表示放行，否则返回拒绝文案。"""
@@ -183,8 +169,9 @@ class CognitionPlugin(Star):
                         ("shell_run", "shell.enabled"),
                     )
                 ),
-                f"今日已动手：{self._usage.get(f'{self._today()}:total', 0)} 次"
+                f"今日已动手：{self._quota.used('total')} 次"
                 + (f"（上限 {self._int('limits.daily_calls', 200)}）" if self._int("limits.daily_calls", 200) > 0 else ""),
+                "最近调用：" + ("；".join(e.as_line() for e in self._audit.recent(3)) or "（还没有）"),
             ]
             self._note_call("info", True)
             return "\n".join(lines)
@@ -434,6 +421,200 @@ class CognitionPlugin(Star):
         except Exception as exc:
             self._note_call("download", False, str(exc))
             return f"下载出错：{type(exc).__name__}: {exc}"
+
+    # ------------------------------------------------------------ 工具：汲取经验
+    @filter.llm_tool(name="toolbox_learn")
+    async def toolbox_learn_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """把一篇网页（或一次搜索的首条结果）读进来，整理成一条"经验"存到工作区 notes/ 里。
+
+        抓不到就如实说抓不到；不要凭记忆编造内容。
+
+        Args:
+            url(string): 要读的网址；与 query 二选一。
+            query(string): 搜索词；没有 url 时用它搜索并取首条结果。
+            title(string): 自己给这条经验起个标题，省略则从网页标题推断。
+        """
+        block = self._gate("learn", "web.fetch_enabled")
+        if block:
+            return block
+        url = str(kwargs.get("url") or "").strip()
+        query = str(kwargs.get("query") or "").strip()
+        title = str(kwargs.get("title") or "").strip()
+        if not url and not query:
+            return "要给我一个网址或搜索词，不然不知道读什么。"
+        used_query = ""
+        body = ""
+        page_title = title
+        source = url
+        try:
+            if not url:
+                found = await web_mod.tavily_search(
+                    query,
+                    api_key=self._str("web.tavily_api_key", "") or self._str("web.search_api_key", ""),
+                    max_results=3,
+                    timeout=self._float("web.timeout_seconds", 20.0),
+                )
+                used_query = query
+                match = None
+                for line in found.splitlines():
+                    if line.strip().startswith("http"):
+                        match = line.strip()
+                        break
+                if match:
+                    source = match
+                else:
+                    # 没有可抓的链接：把搜索摘要本身作为经验内容
+                    body = found
+                    page_title = page_title or f"关于「{query}」的搜索摘要"
+            if source and not body:
+                result = await web_mod.fetch_text(
+                    source,
+                    timeout=self._float("web.timeout_seconds", 20.0),
+                    max_bytes=self._int("web.max_bytes", 2097152),
+                    max_chars=self._int("notes.max_chars", 6000),
+                    user_agent=self._str("web.user_agent", ""),
+                )
+                body = result.text
+                page_title = page_title or result.title
+            if not str(body).strip():
+                self._note_call("learn", False, "抓到的正文为空")
+                return f"抓到了页面但没读到正文（{source}），这条经验没存。"
+
+            filename = notes_mod.note_filename(title=page_title or "", url=source)
+            note = notes_mod.compose_note(
+                title=page_title or "",
+                url=source,
+                body=body,
+                query=used_query,
+                max_body_chars=self._int("notes.max_chars", 6000),
+            )
+            directory = self._str("notes.dir", "notes").strip() or "notes"
+            saved = self.workspace.write_text(f"{directory}/{filename}", note)
+            excerpt, truncated = notes_mod.summarize_for_reply(note)
+            self._note_call("learn", True, saved)
+            head = f"已记下一条经验：「{saved}」（{human_size(len(note.encode('utf-8')))}）"
+            if used_query:
+                head += f"\n来源：搜索「{used_query}」→ {source}"
+            else:
+                head += f"\n来源：{source}"
+            return f"{head}\n\n要点：{excerpt}" + ("\n（要点已截断，完整内容在文件里）" if truncated else "")
+        except (web_mod.WebError, WorkspaceError) as exc:
+            self._note_call("learn", False, str(exc))
+            return f"没记成：{exc}"
+        except Exception as exc:
+            self._note_call("learn", False, str(exc))
+            return f"记这条经验时出错：{type(exc).__name__}: {exc}"
+
+    # ------------------------------------------------------------ 工具：Office
+    @filter.llm_tool(name="toolbox_doc_read")
+    async def toolbox_doc_read_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """读工作区里的 Office 文档（.docx 段落与表格 / .xlsx 工作表内容）并返回文本摘要。
+
+        Args:
+            path(string): 相对文件路径，例如 "reports/summary.docx"。
+        """
+        block = self._gate("doc_read", "fs.enabled")
+        if block:
+            return block
+        path = str(kwargs.get("path") or "").strip()
+        try:
+            target = self.workspace.resolve(path, must_exist=True)
+            suffix = target.suffix.lower()
+            if suffix == ".docx":
+                result = office_mod.read_docx(
+                    target,
+                    max_paragraphs=self._int("office.max_paragraphs", 200),
+                    max_chars=self._int("office.max_chars", 8000),
+                )
+            elif suffix in (".xlsx", ".xlsm"):
+                result = office_mod.read_xlsx(
+                    target,
+                    max_rows=self._int("office.max_rows", 40),
+                    max_chars=self._int("office.max_chars", 8000),
+                )
+            else:
+                return f"只支持 .docx / .xlsx，这个是 {suffix or '无扩展名'}；普通文本请用 toolbox_fs_read。"
+            self._note_call("doc_read", True, path)
+            if not result.text.strip():
+                return f"「{path}」里没有读到内容（{result.kind}）。"
+            summary = f"「{path}」（{result.kind}，"
+            summary += f"{result.paragraphs} 段/行" if result.kind == "docx" else f"{result.tables} 个工作表、{result.paragraphs} 行"
+            summary += f"）：\n{result.text}"
+            return summary
+        except (office_mod.OfficeError, WorkspaceError) as exc:
+            self._note_call("doc_read", False, str(exc))
+            return f"读文档失败：{exc}"
+        except Exception as exc:
+            self._note_call("doc_read", False, str(exc))
+            return f"读文档出错：{type(exc).__name__}: {exc}"
+
+    @filter.llm_tool(name="toolbox_doc_write")
+    async def toolbox_doc_write_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """在工作区里新建一个 Office 文档：.docx 按行写段落，.xlsx 按行写表格。
+
+        Args:
+            path(string): 相对文件路径，扩展名决定格式，例如 "notes/report.docx"。
+            content(string): docx 写正文（一行一段，"- " 开头为列表）；xlsx 写表格（每行用 | 分隔单元格）。
+            title(string): docx 的标题，可省略。
+            sheet_name(string): xlsx 的工作表名，可省略。
+        """
+        block = self._gate("doc_write", "fs.enabled")
+        if block:
+            return block
+        if not self._bool("fs.allow_write", True):
+            return "工作区现在是只读的，不能写文档。"
+        path = str(kwargs.get("path") or "").strip()
+        content = str(kwargs.get("content") or "")
+        title = str(kwargs.get("title") or "").strip()
+        sheet_name = str(kwargs.get("sheet_name") or "Sheet1").strip() or "Sheet1"
+        if not path:
+            return "要给个文件名，例如 notes/report.docx。"
+        try:
+            target = self.workspace.resolve(path)
+            suffix = target.suffix.lower()
+            if suffix == ".docx":
+                lines = [line.rstrip() for line in content.splitlines()]
+                count = office_mod.write_docx(target, title=title, lines=lines)
+                size = target.stat().st_size
+                self._note_call("doc_write", True, path)
+                return f"已生成「{self.workspace.relpath(target)}」（docx，{count} 段，{human_size(size)}）。"
+            if suffix in (".xlsx", ".xlsm"):
+                rows = office_mod.parse_rows(content)
+                if not rows:
+                    return "表格内容是空的，没写。"
+                count = office_mod.write_xlsx(target, rows, sheet_name=sheet_name)
+                size = target.stat().st_size
+                self._note_call("doc_write", True, path)
+                return f"已生成「{self.workspace.relpath(target)}」（xlsx，{count} 行，{human_size(size)}）。"
+            return f"只支持 .docx / .xlsx，这个是 {suffix or '无扩展名'}；纯文本请用 toolbox_fs_write。"
+        except (office_mod.OfficeError, WorkspaceError) as exc:
+            self._note_call("doc_write", False, str(exc))
+            return f"写文档失败：{exc}"
+        except Exception as exc:
+            self._note_call("doc_write", False, str(exc))
+            return f"写文档出错：{type(exc).__name__}: {exc}"
+
+    # ------------------------------------------------------------ 工具：审计
+    @filter.llm_tool(name="toolbox_audit")
+    async def toolbox_audit_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """查看最近调用过哪些工具、成功还是失败（用于自查"我到底动过什么"）。
+
+        Args:
+            limit(number): 最多看多少条，默认 15。
+        """
+        try:
+            count = int(kwargs.get("limit") or 15)
+        except (TypeError, ValueError):
+            count = 15
+        entries = self._audit.recent(max(1, min(60, count)))
+        stats = self._audit.stats()
+        if not entries:
+            return "还没有调用记录。"
+        lines = [f"最近 {len(entries)} 次调用（累计 {stats['total']} 次：成功 {stats['ok']} / 失败 {stats['failed']}）："]
+        lines += [f"  {entry.as_line()}" for entry in entries]
+        if stats["by_tool"]:
+            lines.append("按工具：" + "、".join(f"{k}×{v}" for k, v in sorted(stats["by_tool"].items())))
+        return "\n".join(lines)
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")

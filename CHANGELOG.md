@@ -1,6 +1,14 @@
 # 更新日志
 
-## alpha-0.1（当前）
+## alpha-0.2.1（当前）
+
+- **新增「汲取经验」闭环**：`toolbox_learn` 读网页/搜首条 → 整理成带来源（front-matter）的经验条目落盘 `notes/`，再回要点摘要；抓不到就如实说抓不到。
+- **新增 Office 读写**：`toolbox_doc_read` / `toolbox_doc_write`（docx 段落与表格、xlsx 工作表），带字数/行列上限，缺依赖时给可读错误。
+- **新增调用审计**：`toolbox_audit` 查最近调用与按工具统计（故意无门禁，用于自知）。
+- **重构**：审计与配额抽成 `audit.py`（`AuditLog` + `Quota`），`toolbox_info` 增加用量与最近调用；清掉旧实现残留。
+- 单测 36 → **79/79**（新增 Office 往返、经验条目、审计配额、learn 组合、接线、schema 六组）。详见 [changelogs/alpha-0.2.1.md](changelogs/alpha-0.2.1.md)。
+
+## alpha-0.1
 
 - 首个版本：9 个工具（工作区文件读写/搜索、抓网页、联网搜索、下载、白名单命令）。
 - 安全骨架：路径监狱、SSRF 拦截、敏感文件拒读、体积/超时上限、命令默认关闭+高危名单、每日剂量。
