@@ -23,6 +23,7 @@ from astrbot.api.star import Context, Star, StarTools
 
 from . import PLUGIN_DISPLAY, PLUGIN_NAME, PLUGIN_VERSION
 from . import shell as shell_mod
+from . import skills as skills_mod
 from . import tasks as tasks_mod
 from . import web as web_mod
 from . import notes as notes_mod
@@ -51,6 +52,8 @@ _TOOL_TITLES = {
     "doc_write": "写文档",
     "send_file": "发送文件",
     "doc_export": "导出 PDF",
+    "skill_list": "技能清单",
+    "skill": "取技能流程",
     "image": "处理图片",
     "archive": "打包解包",
     "poke": "戳一戳",
@@ -85,6 +88,9 @@ class CognitionPlugin(Star):
     # ------------------------------------------------------------ 生命周期
     async def initialize(self) -> None:
         try:
+            written = skills_mod.ensure_defaults(self.skills_root)
+            if written:
+                logger.info("[Toolbox] 已写入 %s 个内置技能示例到 %s", written, self.skills_root)
             loaded = self._audit.load()
             if loaded:
                 logger.info("[Toolbox] 已从 audit.jsonl 载入 %s 条历史审计", loaded)
@@ -158,6 +164,13 @@ class CognitionPlugin(Star):
                 allow_write=self._bool("fs.allow_write", True),
             )
         return self._workspace
+
+    @property
+    def skills_root(self) -> Path:
+        """技能目录：plugin_data/<插件>/skills（人放文件，模型只读）。"""
+        path = self.data_dir / "skills"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def principal_for(self, event: Any) -> policy_mod.Principal:
         """当前说话人的身份等级（认不出 → 访客）。"""
@@ -1295,6 +1308,64 @@ class CognitionPlugin(Star):
         except Exception as exc:
             self._note_call("archive", False, str(exc))
             return f"压缩包操作出错：{type(exc).__name__}: {exc}"
+
+    # ------------------------------------------------------------ 工具：技能库
+    @filter.llm_tool(name="toolbox_skill_list")
+    async def toolbox_skill_list_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """列出可用的「技能」（一类活的标准做法）。开始一件正经活之前先看一眼有没有对应技能。
+
+        Args:
+            keyword(string): 只列出名字或说明里含这个词的技能，可省略。
+        """
+        block = self._gate("skill_list", "general.enabled")
+        if block:
+            return block
+        try:
+            skills = skills_mod.scan(self.skills_root)
+        except Exception as exc:
+            self._note_call("skill_list", False, str(exc))
+            return f"读技能库出错：{type(exc).__name__}: {exc}"
+        keyword = str(kwargs.get("keyword") or "").strip().lower()
+        if keyword:
+            skills = [s for s in skills if keyword in s.name.lower() or keyword in s.description.lower()]
+        self._note_call("skill_list", True, keyword or "all")
+        if not skills:
+            hint = f"（没有匹配「{keyword}」的技能）" if keyword else "（还没有任何技能）"
+            return (
+                f"{hint}\n技能是 `skills/` 目录下的 .md 文件，由人编写、模型只读。"
+                f"目录：{self.skills_root}"
+            )
+        lines = skills_mod.summary_lines(skills)
+        return f"共 {len(skills)} 个技能：\n" + "\n".join(lines) + "\n\n要用哪个就说名字，我用 toolbox_skill 取完整流程。"
+
+    @filter.llm_tool(name="toolbox_skill")
+    async def toolbox_skill_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """取一份技能的完整操作流程，然后照着它一步步做。
+
+        Args:
+            name(string): 技能名字（先用 toolbox_skill_list 看有哪些）。
+        """
+        block = self._gate("skill", "general.enabled")
+        if block:
+            return block
+        name = str(kwargs.get("name") or "").strip()
+        if not name:
+            return "要取哪个技能？先用 toolbox_skill_list 看看有哪些。"
+        try:
+            skill = skills_mod.find(self.skills_root, name)
+        except Exception as exc:
+            self._note_call("skill", False, str(exc))
+            return f"读技能出错：{type(exc).__name__}: {exc}"
+        if skill is None:
+            others = [s.name for s in skills_mod.scan(self.skills_root)][:8]
+            tail = f"；现有：{'、'.join(others)}" if others else ""
+            self._note_call("skill", False, f"未找到 {name}")
+            return f"没有这个技能：{name}{tail}"
+        self._note_call("skill", True, skill.name)
+        return (
+            f"技能「{skill.name}」的操作流程如下，照着做，需要时再用工具：\n"
+            f"-----\n{skill.body}\n-----"
+        )
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")

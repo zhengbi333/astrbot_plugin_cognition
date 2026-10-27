@@ -1,6 +1,11 @@
 # 更新日志
 
-## alpha-1.0.0（当前）
+## alpha-1.1.0（当前）
+
+- **新增技能库**：`toolbox_skill_list` / `toolbox_skill`，把「一类活的标准做法」写成 `skills/*.md`，模型按需取用；内置三个示例（做周报 / 整理会议记录 / 批量改文件名）。**模型只能读不能写**，技能也不能改变权限。
+- 新用例 `audit_70` **22/22**。详见 [changelogs/alpha-1.1.0.md](changelogs/alpha-1.1.0.md)。
+
+## alpha-1.0.0
 
 - **权限分级**：管理员（`auth.admins`，留空回退 `exec.owner_ids`）/ 成员 / 访客；代码执行、后台任务、shell、全盘访问只给管理员；认不出身份按访客处理（fail-closed）。
 - **工作区按会话分配**：`shared` / `per_session` / `mapped`（可映射到任意绝对路径）；访问级别 `workspace`（默认路径监狱）与 `full`（仅管理员，可配 `full_roots` 限定根目录）。

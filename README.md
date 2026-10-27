@@ -7,7 +7,7 @@
 **也能把做好的文档直接发给你**（`toolbox_send_file`）；
 **更能接住「没有现成工具」的活**：`toolbox_python` 让她当场写一段脚本把事做完——**只对你的账号开放**。
 
-- 版本：`alpha-1.0.0`
+- 版本：`alpha-1.1.0`
 - AstrBot 版本：`>= 4.22.0`
 - 更新日志：见 [changelogs/](changelogs/)
 
@@ -36,6 +36,8 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 | **`toolbox_doc_export`** | **导出 PDF**（docx/xlsx/pptx/文本 → PDF，**不需要 LibreOffice**） | 开 |
 | **`toolbox_image`** | 图片缩放 / 压缩 / 水印 / 格式转换（Pillow） | 开 |
 | **`toolbox_archive`** | 打包 / 解包（zip、tar；解包防路径穿越与压缩炸弹） | 开 |
+| **`toolbox_skill_list`** | 列出可用「技能」（一类活的标准做法），可按关键词过滤 | 开 |
+| **`toolbox_skill`** | 取某份技能的完整流程，照着做 | 开 |
 | **`toolbox_python`** | **任意任务**：在工作区写并运行 Python 脚本（pandas/numpy/docx/openpyxl/pptx/Pillow） | 开（**仅主人**） |
 | **`toolbox_task_start`** | **后台任务**：把耗时脚本丢后台跑，立刻拿任务号 | 开（**仅主人**） |
 | **`toolbox_task_status`** | 查后台任务：状态、耗时、退出码、最近输出 | 开（**仅主人**） |
@@ -100,6 +102,18 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 | `workspace.access=full` | 可访问工作区之外，**只有管理员能用**，非管理员自动降级；再用 `workspace.full_roots` 限定可访问的根目录（留空=真全盘，慎用） |
 
 工作区只放**运行产物**（脚本、生成的文档、下载的文件、日志）。会话数据归记忆插件，不要混放。
+
+## 技能库（skill）
+
+把"一类活怎么干"写成文件，模型**按需取用**（对应 DSH 的 skill 机制）：
+
+- 位置：`~/.astrbot/data/plugin_data/astrbot_plugin_cognition/skills/*.md`
+- 格式：一级标题当名字，`> ` 引言当一句话说明，正文写步骤
+- **只有人能加/改**（直接放文件），模型只能读 —— 避免它给自己写"绕过规则"的流程
+- 内置三个示例（首次启动写入，不覆盖已有）：做周报 / 整理会议记录 / 批量改文件名
+- 单个技能超 6000 字会截断
+
+工作流：`toolbox_skill_list` 看有哪些 → `toolbox_skill(name)` 取流程 → 照着调工具。
 
 ## 许可
 
