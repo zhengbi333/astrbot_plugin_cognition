@@ -1,6 +1,11 @@
 # 更新日志
 
-## alpha-1.4.0（当前）
+## alpha-1.4.1（当前）
+
+- **修：插件加载失败** —— `exec.timeout_seconds` 的类型写成了 `number`，AstrBot 只认 int/float/bool/string/text/list/file/object/template_list/dict，已改为 `int`；顺带扫描三插件全部 schema 类型并规范化别名。
+- 详见 [changelogs/alpha-1.4.1.md](changelogs/alpha-1.4.1.md)。
+
+## alpha-1.4.0
 
 - **子代理升级为多专家**（对标 AstrBot handoff，但自己实现）：`delegate.agents` 配专家（name/description/system/provider_id/max_chars），`toolbox_delegate(agent=...)` 按名字选派，新增 `toolbox_delegate_list`；支持**每专家指定模型**（省钱）与**每日 30 次**成本护栏 + 审计。
 - 设计分工：主代理取数、子代理思考（子代理不给工具，避免乱动工作区）。

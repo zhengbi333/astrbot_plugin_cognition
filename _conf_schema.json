@@ -248,7 +248,7 @@
       },
       "timeout_seconds": {
         "description": "超时（秒）",
-        "type": "number",
+        "type": "int",
         "default": 30,
         "hint": "脚本运行超过这个时间会被强杀（上限 120 秒）。"
       },
