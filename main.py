@@ -26,6 +26,7 @@ from . import shell as shell_mod
 from . import tasks as tasks_mod
 from . import web as web_mod
 from . import notes as notes_mod
+from . import notify as notify_mod
 from . import exec as exec_mod
 from . import office as office_mod
 from .audit import AuditLog, Quota
@@ -169,6 +170,17 @@ class CognitionPlugin(Star):
     def _note_call(self, tool: str, ok: bool, detail: str = "") -> None:
         self._quota.bump(tool)
         self._audit.note(tool, ok, detail)
+
+    async def _remember_action(self, event: Any, *, kind: str, text: str, meta: dict | None = None) -> None:
+        """把"我做了什么"转告人格（认知 → 人格 → 记忆）。失败只记日志，不影响工具结果。"""
+        try:
+            result = await notify_mod.notify_persona(
+                self.context, event, kind=kind, text=text, meta=meta or {}
+            )
+            if not result.get("ok"):
+                logger.debug("[Toolbox] 记忆转写未达成：%s", result.get("reason"))
+        except Exception as exc:
+            logger.debug("[Toolbox] 记忆转写异常（忽略）: %s", exc)
 
     def _owner_denied(self, event: Any, *, tool: str = "script") -> str:
         """owner 门禁：名单为空 = 谁都不许（绝不等于所有人）。返回空串表示放行。"""
@@ -468,6 +480,11 @@ class CognitionPlugin(Star):
                     return f"这个类型不允许下载（{suffix or '无扩展名'}）；允许：{'、'.join(sorted(allowed))}"
             saved = self.workspace.save_bytes(target, data)
             self._note_call("download", True, saved)
+            await self._remember_action(
+                event, kind="download",
+                text=f"我下载了一个文件，存到 {saved}（{human_size(len(data))}）。",
+                meta={"path": saved, "url": url},
+            )
             extra = f"（{ctype}）" if ctype else ""
             return f"已下载到「{saved}」，{human_size(len(data))}{extra}。"
         except (web_mod.WebError, WorkspaceError) as exc:
@@ -547,6 +564,13 @@ class CognitionPlugin(Star):
             saved = self.workspace.write_text(f"{directory}/{filename}", note)
             excerpt, truncated = notes_mod.summarize_for_reply(note)
             self._note_call("learn", True, saved)
+            await self._remember_action(
+                event,
+                kind="learn",
+                text=f"我读完了一篇内容（{page_title or '未命名'}），整理成经验存到 {saved}。"
+                     f"要点：{excerpt[:160]}",
+                meta={"path": saved, "source": source, "query": used_query},
+            )
             head = f"已记下一条经验：「{saved}」（{human_size(len(note.encode('utf-8')))}）"
             if used_query:
                 head += f"\n来源：搜索「{used_query}」→ {source}"
@@ -649,6 +673,11 @@ class CognitionPlugin(Star):
                 count = office_mod.write_docx(target, title=title, lines=lines)
                 size = target.stat().st_size
                 self._note_call("doc_write", True, path)
+                await self._remember_action(
+                    event, kind="doc_write",
+                    text=f"我做了一份文档 {self.workspace.relpath(target)}（docx，{count} 段）。",
+                    meta={"path": self.workspace.relpath(target), "format": "docx"},
+                )
                 return f"已生成「{self.workspace.relpath(target)}」（docx，{count} 段，{human_size(size)}）。"
             if suffix in (".xlsx", ".xlsm"):
                 rows = office_mod.parse_rows(content)
@@ -657,6 +686,11 @@ class CognitionPlugin(Star):
                 count = office_mod.write_xlsx(target, rows, sheet_name=sheet_name)
                 size = target.stat().st_size
                 self._note_call("doc_write", True, path)
+                await self._remember_action(
+                    event, kind="doc_write",
+                    text=f"我做了一份表格 {self.workspace.relpath(target)}（xlsx，{count} 行）。",
+                    meta={"path": self.workspace.relpath(target), "format": "xlsx"},
+                )
                 return f"已生成「{self.workspace.relpath(target)}」（xlsx，{count} 行，{human_size(size)}）。"
             if suffix == ".pptx":
                 slides = office_mod.parse_slides(content)
@@ -669,6 +703,11 @@ class CognitionPlugin(Star):
                 )
                 size = target.stat().st_size
                 self._note_call("doc_write", True, path)
+                await self._remember_action(
+                    event, kind="doc_write",
+                    text=f"我做了一份幻灯片 {self.workspace.relpath(target)}（pptx，{count} 页正文）。",
+                    meta={"path": self.workspace.relpath(target), "format": "pptx"},
+                )
                 return (
                     f"已生成「{self.workspace.relpath(target)}」（pptx，{count} 页正文"
                     + ("，含封面" if title else "") + f"，{human_size(size)}）。"
@@ -743,6 +782,11 @@ class CognitionPlugin(Star):
                 return "拿不到当前会话，没法把文件发出去。"
             await sender(session_id, chain)
             self._note_call("send_file", True, path)
+            await self._remember_action(
+                event, kind="send_file",
+                text=f"我把 {self.workspace.relpath(target)} 发到了当前会话（{human_size(size)}）。",
+                meta={"path": self.workspace.relpath(target)},
+            )
             return f"已把「{self.workspace.relpath(target)}」（{human_size(size)}）发到这个会话。"
         except WorkspaceError as exc:
             self._note_call("send_file", False, str(exc))

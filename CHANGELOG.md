@@ -1,6 +1,12 @@
 # 更新日志
 
-## alpha-0.6.0（当前）
+## alpha-0.7.0（当前）
+
+- **补上「认知 → 人格 → 记忆」的断边**：`learn` / `doc_write` / `download` / `send_file` 成功后，认知通过 `notify_persona` 转告人格，由人格统一写入 `record_bot_action`（self_action）。她做的事终于会留下记忆痕迹。
+- 人格新增 `note_external_event` 统一写入口（去重、异常不抛、无桥降级）。
+- 新用例 `audit_65` **20/20**。详见 [changelogs/alpha-0.7.0.md](changelogs/alpha-0.7.0.md)。
+
+## alpha-0.6.0
 
 - **验收整改**：后台任务强制无缓冲（不再"看起来卡死"）、重载插件不再杀任务（新增 `kill_all`）、shell 升级为「程序+只读子命令+拒危险参数」三层校验且默认白名单改为空。
 - 打转计数跨轮累计、历史工具结果自动压缩、审计落盘 `audit.jsonl`（重启可查）、`doc_write` 独立 `subtitle`。
