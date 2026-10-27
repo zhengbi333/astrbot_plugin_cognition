@@ -79,9 +79,32 @@ def load_schema(plugin: Any) -> dict[str, Any]:
 
 def _config_file(plugin: Any) -> Path:
     """AstrBot 的插件配置文件位置。"""
-    candidates = [
-        Path("C:/Users/阡然/.astrbot/data/config") / f"{PLUGIN_NAME}_config.json",
-    ]
+    # 不能写死用户名：换台电脑、换个 Windows 账户就崩。
+    # 以插件数据目录为锚（<data>/plugin_data/<插件名> → 上两级是 <data>），再拼 config/。
+    candidates = []
+    try:
+        anchor = Path(str(plugin.data_dir)).resolve()
+        for parent in anchor.parents:
+            candidate = parent / "config" / f"{PLUGIN_NAME}_config.json"
+            if candidate.is_file():
+                candidates.append(candidate)
+                break
+        else:
+            # 还没生成过配置时，"上两级的 config" 仍然是最可能的位置
+            if len(anchor.parents) >= 2:
+                candidates.append(anchor.parents[1] / "config" / f"{PLUGIN_NAME}_config.json")
+    except Exception:
+        pass
+    # 兜底：环境变量 / 家目录（不写死具体用户名）
+    try:
+        import os
+
+        env_root = os.environ.get("ASTRBOT_DATA") or ""
+        if env_root:
+            candidates.append(Path(env_root) / "config" / f"{PLUGIN_NAME}_config.json")
+    except Exception:
+        pass
+    candidates.append(Path.home() / ".astrbot" / "data" / "config" / f"{PLUGIN_NAME}_config.json")
     for path in candidates:
         if path.parent.is_dir():
             return path

@@ -1,5 +1,11 @@
 # 更新日志
 
+
+## alpha-1.5.6（当前）
+
+- `page_config.py` 里有：
+- 详见 [changelogs/alpha-1.5.6.md](changelogs/alpha-1.5.6.md)。
+
 ## alpha-1.5.4（当前）
 
 - **修设置页取值**：`plugin.config.get("auth.admins")` 返回 None（点号路径不可靠），导致面板显示空、保存后又被读成空（用户以为「填的 QQ 号消失了」，其实文件里一直在）。现在面板**直接读配置文件**，文件是唯一真相。
