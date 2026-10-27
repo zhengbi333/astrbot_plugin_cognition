@@ -65,6 +65,7 @@ _TOOL_TITLES = {
     "glob": "模式查找",
     "goal": "长期目标",
     "delegate": "子代理",
+    "delegate_list": "专家清单",
     "image": "处理图片",
     "archive": "打包解包",
     "poke": "戳一戳",
@@ -175,6 +176,23 @@ class CognitionPlugin(Star):
                 allow_write=self._bool("fs.allow_write", True),
             )
         return self._workspace
+
+    @property
+    def delegate_budget(self) -> delegate_mod.CallBudget:
+        """子代理的每日调用预算（防成本失控）。"""
+        if getattr(self, "_delegate_budget", None) is None:
+            self._delegate_budget = delegate_mod.CallBudget(
+                daily_limit=self._int("delegate.daily_limit", 30)
+            )
+        return self._delegate_budget
+
+    def _experts(self) -> list[delegate_mod.Expert]:
+        """从配置读专家列表（agents 是 JSON 数组字符串）。"""
+        try:
+            raw = self.config.get("delegate.agents", "")
+        except Exception:
+            raw = ""
+        return [e for e in delegate_mod.parse_experts(raw) if e.enabled]
 
     @property
     def goals(self) -> goals_mod.GoalStore:
@@ -1600,16 +1618,40 @@ class CognitionPlugin(Star):
             self._note_call("goal", False, str(exc))
             return f"目标操作出错：{type(exc).__name__}: {exc}"
 
+    @filter.llm_tool(name="toolbox_delegate_list")
+    async def toolbox_delegate_list_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """列出可用的「专家」（子代理），每个一句说明。要用子代理前先看一眼。"""
+        block = self._gate("delegate_list", "exec.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "exec")
+        if deny:
+            return deny
+        experts = self._experts()
+        budget = self.delegate_budget
+        head = f"今日子代理额度：{budget.left()}/{budget.daily_limit} 次"
+        if not experts:
+            return (
+                f"{head}\n还没有配置专家（配置项 delegate.agents 是 JSON 数组）。"
+                "不配也能用 `toolbox_delegate(task=...)`，那就是「默认」通用推理。"
+            )
+        lines = [head, f"共 {len(experts)} 个专家："]
+        lines.extend(e.one_line() for e in experts)
+        return "\n".join(lines)
+
     @filter.llm_tool(name="toolbox_delegate")
     async def toolbox_delegate_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
-        """把一件**独立的小事**交给「另一个自己」处理（不共享当前对话上下文）。
+        """把一件**独立的小事**交给子代理（专家）处理：它在干净上下文里想，不看当前对话。
 
-        适合：需要单独想清楚的一段推理/写作/评审/翻译，不想让当前对话干扰它。
-        它会用同一个模型跑一次独立请求，只带任务与材料，返回结果。
-        **不适合**：需要当前对话上下文的事（它看不到）、需要动手的事（它没有工具）。
+        分工原则：**你负责取数，它负责思考**。材料（文件内容、要点）你要自己先用工具读出来，
+        放进 material 交给它；它没有工具，拿不到别的东西。
+
+        适合：写作、审稿、翻译、长文摘要、方案对比这类「想清楚再给结论」的活。
+        不适合：需要当前对话上下文、需要动手改文件的事。
 
         Args:
             task(string): 要它做什么（简短明确）。
+            agent(string): 用哪个专家（先看 toolbox_delegate_list），省略则用默认。
             material(string): 相关材料，可省略（上限 4000 字）。
         """
         block = self._gate("delegate", "exec.enabled")
@@ -1620,18 +1662,44 @@ class CognitionPlugin(Star):
             return deny
         task = str(kwargs.get("task") or "").strip()
         material = str(kwargs.get("material") or "")
+        agent_name = str(kwargs.get("agent") or "").strip()
+
+        budget = self.delegate_budget
+        if budget.left() <= 0:
+            self._note_call("delegate", False, "daily_limit")
+            return f"今天的子代理额度已用完（{budget.daily_limit} 次），明天再交，或者自己直接做。"
+
+        expert = None
+        if agent_name:
+            expert = delegate_mod.find_expert(self._experts(), agent_name)
+            if expert is None:
+                names = "、".join(e.name for e in self._experts()) or "（未配置）"
+                self._note_call("delegate", False, f"未知专家 {agent_name}")
+                return f"没有这个专家：{agent_name}。现有：{names}"
+
         try:
             provider = self.context.get_using_provider()
         except Exception:
             provider = None
+        # per-agent provider 覆盖（便宜活可以用便宜模型）
+        if expert is not None and expert.provider_id:
+            try:
+                override = self.context.get_provider_by_id(expert.provider_id)
+                if override is not None:
+                    provider = override
+            except Exception:
+                pass
         if provider is None:
             self._note_call("delegate", False, "无可用 provider")
             return "现在没有可用的模型，交不出去。"
+
+        if not budget.take():
+            self._note_call("delegate", False, "daily_limit")
+            return "今天的子代理额度已用完。"
         try:
-            result = await delegate_mod.delegate(provider, task=task, material=material)
-            self._note_call("delegate", True, task[:40])
-            head = f"（子代理 · {result.model}）" if result.model else "（子代理）"
-            return f"{head}\n{result.text}"
+            result = await delegate_mod.delegate(provider, task=task, material=material, expert=expert)
+            self._note_call("delegate", True, (expert.name if expert else "默认") + " / " + task[:30])
+            return f"{result.header}\n{result.text}"
         except delegate_mod.DelegateError as exc:
             self._note_call("delegate", False, str(exc))
             return f"子代理失败：{exc}"

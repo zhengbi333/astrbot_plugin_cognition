@@ -1,6 +1,12 @@
 # 更新日志
 
-## alpha-1.3.0（当前）
+## alpha-1.4.0（当前）
+
+- **子代理升级为多专家**（对标 AstrBot handoff，但自己实现）：`delegate.agents` 配专家（name/description/system/provider_id/max_chars），`toolbox_delegate(agent=...)` 按名字选派，新增 `toolbox_delegate_list`；支持**每专家指定模型**（省钱）与**每日 30 次**成本护栏 + 审计。
+- 设计分工：主代理取数、子代理思考（子代理不给工具，避免乱动工作区）。
+- 新用例 `audit_75` **37/37**。详见 [changelogs/alpha-1.4.0.md](changelogs/alpha-1.4.0.md)。
+
+## alpha-1.3.0
 
 - **全面审查后补 4 个 DSH 缺口**：`toolbox_edit`（精确编辑，不用重写整份文件）、`toolbox_glob`（`**` 递归查找、按修改时间倒序）、`toolbox_goal`（长期目标，跨会话持久化、原子写入）、`toolbox_delegate`（子代理：同模型独立推理一次，不共享对话上下文）。
 - 审查还列出未做的 4 项：工作流编排、中途提问、用量台账、会话环境卡。

@@ -314,6 +314,24 @@
       }
     }
   },
+  "delegate": {
+    "description": "子代理（专家）",
+    "type": "object",
+    "items": {
+      "agents": {
+        "description": "专家列表（JSON 数组）",
+        "type": "text",
+        "default": "[]",
+        "hint": "每项：name（必填）/ description（给主模型看的一句话）/ system（它的系统提示词）/ provider_id（可选，指定便宜模型）/ max_chars（输出上限，默认 2000）。例：[{\"name\":\"审稿\",\"description\":\"挑文档里的问题\",\"system\":\"你是严格的审稿人…\"}]"
+      },
+      "daily_limit": {
+        "description": "每天最多调用几次",
+        "type": "int",
+        "default": 30,
+        "hint": "子代理要额外付一次模型调用，这里做成本护栏；用完就拒绝，明天重置。"
+      }
+    }
+  },
   "notes": {
     "description": "经验条目",
     "type": "object",
