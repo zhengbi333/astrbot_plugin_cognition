@@ -27,6 +27,7 @@ from . import tasks as tasks_mod
 from . import web as web_mod
 from . import notes as notes_mod
 from . import notify as notify_mod
+from . import qq_actions as qq_mod
 from . import exec as exec_mod
 from . import office as office_mod
 from .audit import AuditLog, Quota
@@ -162,6 +163,38 @@ class CognitionPlugin(Star):
             )
             self._task_manager = manager
         return manager
+
+    def _action_left(self, kind: str) -> int:
+        """平台动作（戳/赞）的每日余额。limit<=0 表示不限。"""
+        limit = self._int("actions.daily_limit", 20)
+        if limit <= 0:
+            return -1
+        day = time.strftime("%Y-%m-%d", time.localtime())
+        used = getattr(self, "_action_counts", {}).get(f"{day}:{kind}", 0)
+        return max(0, limit - used)
+
+    def _note_action(self, kind: str) -> None:
+        counts = getattr(self, "_action_counts", None)
+        if counts is None:
+            counts = {}
+            self._action_counts = counts
+        day = time.strftime("%Y-%m-%d", time.localtime())
+        key = f"{day}:{kind}"
+        counts[key] = counts.get(key, 0) + 1
+        # 只留今天的键，防止无限增长
+        for old in [k for k in counts if not k.startswith(day)]:
+            counts.pop(old, None)
+
+    def _bot_self_id(self) -> str:
+        """尽力取机器人自己的 QQ 号（取不到就空串，不影响默认目标）。"""
+        for getter in ("get_self_id",):
+            try:
+                value = getattr(self.context, getter, None)
+                if callable(value):
+                    return str(value() or "")
+            except Exception:
+                pass
+        return ""
 
     def _quota_left(self) -> int:
         """今天还剩多少次工具调用额度（0 = 用完了，-1 = 不限制）。"""
@@ -950,6 +983,68 @@ class CognitionPlugin(Star):
         if record.running:
             return f"任务 {record.task_id} 好像还在跑，再查一次确认。"
         return f"任务 {record.task_id} 已停止（退出码 {record.returncode if record.returncode is not None else '未知'}）。"
+
+    # ------------------------------------------------------------ 工具：平台动作
+    @filter.llm_tool(name="toolbox_poke")
+    async def toolbox_poke_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """戳一戳对方（QQ 的"拍一拍"）。群聊会戳当前说话的人，私聊就戳对方。
+
+        什么时候用：想逗一下、提醒一下、或者对方半天没理你时轻轻碰一下。
+        不要频繁使用——真人也是偶尔才戳。
+
+        Args:
+            target(string): 留空表示当前说话的人；也可以填我自己的 QQ 号。
+        """
+        block = self._gate("poke", "actions.enabled")
+        if block:
+            return block
+        left = self._action_left("poke")
+        if left == 0:
+            return f"今天的戳一戳用完了（上限 {self._int('actions.daily_limit', 20)} 次）。"
+        target = str(kwargs.get("target") or "").strip()
+        try:
+            result = await qq_mod.poke(event, target, self_id=self._bot_self_id())
+        except qq_mod.QqActionError as exc:
+            self._note_call("poke", False, str(exc))
+            return f"戳不出去：{exc}"
+        except Exception as exc:
+            self._note_call("poke", False, str(exc))
+            return f"戳的时候出错了：{type(exc).__name__}: {exc}"
+        self._note_action("poke")
+        self._note_call("poke", True, result)
+        return result
+
+    @filter.llm_tool(name="toolbox_like")
+    async def toolbox_like_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """给对方的 QQ 名片点赞（每天有次数上限，别刷）。
+
+        Args:
+            times(number): 点几个，默认 1，最多按配置上限（默认 10）。
+        """
+        block = self._gate("like", "actions.enabled")
+        if block:
+            return block
+        left = self._action_left("like")
+        if left == 0:
+            return f"今天的点赞用完了（上限 {self._int('actions.daily_limit', 20)} 次）。"
+        try:
+            times = int(kwargs.get("times") or 1)
+        except (TypeError, ValueError):
+            times = 1
+        cap = self._int("actions.like_cap", 10)
+        try:
+            result = await qq_mod.like(
+                event, "", times=times, cap=cap, self_id=self._bot_self_id()
+            )
+        except qq_mod.QqActionError as exc:
+            self._note_call("like", False, str(exc))
+            return f"点不了赞：{exc}"
+        except Exception as exc:
+            self._note_call("like", False, str(exc))
+            return f"点赞时出错了：{type(exc).__name__}: {exc}"
+        self._note_action("like")
+        self._note_call("like", True, result)
+        return result
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")

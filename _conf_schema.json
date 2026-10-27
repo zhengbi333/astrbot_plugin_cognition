@@ -143,6 +143,30 @@
       }
     }
   },
+  "actions": {
+    "description": "平台社交动作（戳一戳 / 点赞）",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用戳一戳与点赞",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后她可以「戳一下」当前说话的人、给名片点赞（QQ 的拍一拍）。目标只能是当前说话的人或她自己——不能打到无关的 QQ 号上。仅 aiocqhttp 平台可用。"
+      },
+      "daily_limit": {
+        "description": "每类动作每日上限",
+        "type": "int",
+        "default": 20,
+        "hint": "戳一戳与点赞**各自**每天最多这么多次（0=不限）。防止刷屏或被诱导去骚扰。"
+      },
+      "like_cap": {
+        "description": "单次点赞上限",
+        "type": "int",
+        "default": 10,
+        "hint": "一次最多给名片点几个赞（1~10）。"
+      }
+    }
+  },
   "exec": {
     "description": "任意任务（跑 Python，仅主人可用）",
     "type": "object",

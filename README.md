@@ -7,7 +7,7 @@
 **也能把做好的文档直接发给你**（`toolbox_send_file`）；
 **更能接住「没有现成工具」的活**：`toolbox_python` 让她当场写一段脚本把事做完——**只对你的账号开放**。
 
-- 版本：`alpha-0.7.0`
+- 版本：`alpha-0.8.0`
 - AstrBot 版本：`>= 4.22.0`
 - 更新日志：见 [changelogs/](changelogs/)
 
@@ -31,6 +31,8 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 | **`toolbox_doc_read`** | 读 `.docx` / `.xlsx` / **`.pptx`**（段落、表格、工作表、幻灯片文字） | 开 |
 | **`toolbox_doc_write`** | 新建 `.docx` / `.xlsx` / **`.pptx`**（段落 / 单元格 / 幻灯片大纲） | 开 |
 | **`toolbox_send_file`** | **把工作区里的文件发到当前会话**（「把这个文档发我」） | 开 |
+| **`toolbox_poke`** | **戳一戳/拍一拍**：戳当前说话的人（群聊走 group_poke、私聊走 send_poke） | 开 |
+| **`toolbox_like`** | **给名片点赞**（标准 OneBot send_like，单次上限可配） | 开 |
 | **`toolbox_python`** | **任意任务**：在工作区写并运行 Python 脚本（pandas/numpy/docx/openpyxl/pptx/Pillow） | 开（**仅主人**） |
 | **`toolbox_task_start`** | **后台任务**：把耗时脚本丢后台跑，立刻拿任务号 | 开（**仅主人**） |
 | **`toolbox_task_status`** | 查后台任务：状态、耗时、退出码、最近输出 | 开（**仅主人**） |

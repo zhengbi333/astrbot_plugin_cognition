@@ -1,6 +1,12 @@
 # 更新日志
 
-## alpha-0.7.0（当前）
+## alpha-0.8.0（当前）
+
+- **新增 QQ 平台社交动作**：`toolbox_poke`（戳一戳/拍一拍）、`toolbox_like`（名片点赞）。走 `bot.call_action` 通用动作通道；**目标只允许当前说话的人或机器人自己**，戳一戳与点赞各自每日限额（默认 20），平台不支持时明确回报。
+- **说明**：QQ 说说（Qzone）一族不在标准 OneBot 协议里（属 SnowLuma 扩展 API），本版**做不到**，不做假装支持。
+- 新用例 `audit_66` **24/24**。详见 [changelogs/alpha-0.8.0.md](changelogs/alpha-0.8.0.md)。
+
+## alpha-0.7.0
 
 - **补上「认知 → 人格 → 记忆」的断边**：`learn` / `doc_write` / `download` / `send_file` 成功后，认知通过 `notify_persona` 转告人格，由人格统一写入 `record_bot_action`（self_action）。她做的事终于会留下记忆痕迹。
 - 人格新增 `note_external_event` 统一写入口（去重、异常不抛、无桥降级）。
