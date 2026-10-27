@@ -1,6 +1,13 @@
 # 更新日志
 
-## alpha-1.4.1（当前）
+## alpha-1.5.0（当前）
+
+- **新增 WebUI 面板**（终末地风格：黑底亮黄强调块、直角、几何网格、等宽字体、编号与坐标读数、25ms 闪入、easeInOutExpo 缓动）：六个页签 —— 总览 / 专家 / 目标 / 技能 / 记录 / 关于；目标可在面板里直接立与收尾。
+- 修：`.cell` 入场动画在 headless 下卡在 opacity 0 导致空白（已移除会隐藏内容的动画）。
+- 新用例 `audit_76`（配置类型合法性，防上次的 `number` 事故）+ 面板接口与页面存在性检查。
+- 详见 [changelogs/alpha-1.5.0.md](changelogs/alpha-1.5.0.md)。
+
+## alpha-1.4.1
 
 - **修：插件加载失败** —— `exec.timeout_seconds` 的类型写成了 `number`，AstrBot 只认 int/float/bool/string/text/list/file/object/template_list/dict，已改为 `int`；顺带扫描三插件全部 schema 类型并规范化别名。
 - 详见 [changelogs/alpha-1.4.1.md](changelogs/alpha-1.4.1.md)。

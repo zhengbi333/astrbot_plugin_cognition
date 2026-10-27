@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>为你而在的认知 · 执行面板</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="scan"></div>
+
+  <header class="top">
+    <div class="brand">
+      <div class="mark"></div>
+      <div class="brandtext">
+        <h1>为你而在的认知<span class="slash">/</span><em>EXECUTION</em></h1>
+        <p class="sub">COGNITION · TOOLBOX PANEL <span id="ver">—</span></p>
+      </div>
+    </div>
+    <div class="status">
+      <div class="chip" id="chip-status"><i></i><span>LINK</span></div>
+      <div class="coord" id="coord">X 0000 · Y 0000</div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <nav class="rail" id="rail"></nav>
+
+    <section class="stage">
+      <div class="stagehead">
+        <div class="idx" id="idx">01</div>
+        <div class="titles">
+          <h2 id="title">总览</h2>
+          <p id="desc">运行时状态</p>
+        </div>
+        <button class="btn ghost" id="refresh">刷新</button>
+      </div>
+
+      <div class="panel" id="panel">
+        <div class="loading">载入中…</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span id="foot-left">COGNITION</span>
+    <span id="foot-mid" class="dim">—</span>
+    <span id="foot-right" class="dim">READY</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -33,6 +33,7 @@ from . import archive as archive_mod
 from . import image_ops as image_mod
 from . import parallel as parallel_mod
 from . import pdfgen as pdf_mod
+from . import page_api as page_api_mod
 from . import policy as policy_mod
 from . import workspace_policy as ws_policy
 from . import qq_actions as qq_mod
@@ -99,6 +100,10 @@ class CognitionPlugin(Star):
 
     # ------------------------------------------------------------ 生命周期
     async def initialize(self) -> None:
+        try:
+            page_api_mod.CognitionWebApi(self).mount(self.context)
+        except Exception as exc:  # 面板失败不能影响插件本体
+            logger.warning("[Toolbox] 面板接口挂载失败（插件仍可用）: %s", exc)
         try:
             written = skills_mod.ensure_defaults(self.skills_root)
             if written:
