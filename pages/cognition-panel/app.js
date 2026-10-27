@@ -1,8 +1,9 @@
 /* 为你而在的认知 · 面板逻辑
    通过 AstrBotPluginPage bridge 调后端；接口前缀与插件名一致。 */
 
-const bridge = window.AstrBotPluginPage;
-const PREFIX = "/astrbot_plugin_cognition";
+/* 注意：bridge.apiGet/apiPost 会自己补插件前缀，这里只能传相对路径。
+   之前传了 "/astrbot_plugin_cognition/overview"，前缀重复 → 404 → Failed to fetch。 */
+const PLUGIN = "astrbot_plugin_cognition";
 
 const TABS = [
   { key: "overview", n: "01", label: "总览", title: "总览", desc: "运行时状态、权限、额度与工具盘点" },
@@ -17,26 +18,42 @@ const el = (id) => document.getElementById(id);
 const state = { tab: "overview", data: {} };
 
 /* ---------------- bridge 兼容层 ---------------- */
-async function apiGet(path) {
-  if (bridge && typeof bridge.apiGet === "function") {
-    const res = await bridge.apiGet(PREFIX + path);
-    return res && res.data !== undefined ? res.data : res;
+/* bridge 可能晚一点注入，等它一下（最多 3 秒） */
+async function waitBridge() {
+  for (let i = 0; i < 30; i += 1) {
+    if (window.AstrBotPluginPage) return window.AstrBotPluginPage;
+    await new Promise((r) => setTimeout(r, 100));
   }
-  const res = await fetch(PREFIX + path, { credentials: "same-origin" });
+  return null;
+}
+
+function unwrap(res) {
+  if (res && typeof res === "object" && res.data !== undefined) return res.data;
+  return res;
+}
+
+async function apiGet(path) {
+  const api = window.AstrBotPluginPage;
+  if (api && typeof api.apiGet === "function") {
+    return unwrap(await api.apiGet(path));
+  }
+  const res = await fetch(`/${PLUGIN}/${path}`, { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function apiPost(path, body) {
-  if (bridge && typeof bridge.apiPost === "function") {
-    const res = await bridge.apiPost(PREFIX + path, body || {});
-    return res && res.data !== undefined ? res.data : res;
+  const api = window.AstrBotPluginPage;
+  if (api && typeof api.apiPost === "function") {
+    return unwrap(await api.apiPost(path, body || {}));
   }
-  const res = await fetch(PREFIX + path, {
+  const res = await fetch(`/${PLUGIN}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
     body: JSON.stringify(body || {}),
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
@@ -245,7 +262,7 @@ function renderAbout() {
 
 /* ---------------- 载入与切换 ---------------- */
 async function loadOverview() {
-  const d = await apiGet("/overview");
+  const d = await apiGet("overview");
   state.data.overview = d;
   el("ver").textContent = d.version || "—";
   const chip = el("chip-status");
@@ -256,10 +273,10 @@ async function loadOverview() {
 
 async function loadTab(key) {
   if (key === "overview") return loadOverview();
-  if (key === "experts") return renderExperts(await apiGet("/experts"));
-  if (key === "goals") return renderGoals(await apiGet("/goals"));
-  if (key === "skills") return renderSkills(await apiGet("/skills"));
-  if (key === "audit") return renderAudit(await apiGet("/audit"));
+  if (key === "experts") return renderExperts(await apiGet("experts"));
+  if (key === "goals") return renderGoals(await apiGet("goals"));
+  if (key === "skills") return renderSkills(await apiGet("skills"));
+  if (key === "audit") return renderAudit(await apiGet("audit"));
   if (key === "about") return renderAbout();
   return "<div class=\"empty\">未知页签</div>";
 }
@@ -271,7 +288,7 @@ function bindActions() {
       const title = el("goal-title").value.trim();
       const note = el("goal-note").value.trim();
       if (!title) return toast("目标不能为空", true);
-      const res = await apiPost("/goals/add", { title, note });
+      const res = await apiPost("goals/add", { title, note });
       if (res && res.status === "error") return toast(res.message || "失败", true);
       toast("已立目标");
       render();
@@ -279,21 +296,21 @@ function bindActions() {
   }
   document.querySelectorAll("[data-done]").forEach((btn) => {
     btn.onclick = async () => {
-      await apiPost("/goals/close", { goal_id: btn.dataset.done, state: "done" });
+      await apiPost("goals/close", { goal_id: btn.dataset.done, state: "done" });
       toast("已完成");
       render();
     };
   });
   document.querySelectorAll("[data-drop]").forEach((btn) => {
     btn.onclick = async () => {
-      await apiPost("/goals/close", { goal_id: btn.dataset.drop, state: "dropped" });
+      await apiPost("goals/close", { goal_id: btn.dataset.drop, state: "dropped" });
       toast("已放弃");
       render();
     };
   });
   document.querySelectorAll("[data-skill]").forEach((btn) => {
     btn.onclick = async () => {
-      const res = await apiGet("/skills/read?name=" + encodeURIComponent(btn.dataset.skill));
+      const res = await apiGet("skills/read?name=" + encodeURIComponent(btn.dataset.skill));
       const box = el("skill-body");
       if (!box) return;
       box.innerHTML = `<div class="sect"><h3>${esc(res.name || "")}</h3><div class="rule"></div></div>
@@ -313,7 +330,7 @@ function bindActions() {
   const clear = el("audit-clear");
   if (clear) {
     clear.onclick = async () => {
-      await apiPost("/audit/clear", {});
+      await apiPost("audit/clear", {});
       toast("已清空");
       render();
     };
@@ -377,4 +394,4 @@ window.addEventListener("hashchange", () => {
 });
 
 applyHash();
-render();
+waitBridge().then(render);
