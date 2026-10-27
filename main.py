@@ -45,6 +45,8 @@ _TOOL_TITLES = {
     "doc_read": "读文档",
     "doc_write": "写文档",
     "send_file": "发送文件",
+    "poke": "戳一戳",
+    "like": "点赞",
     "audit": "调用审计",
     "python": "跑脚本",
     "task_start": "启动后台任务",
