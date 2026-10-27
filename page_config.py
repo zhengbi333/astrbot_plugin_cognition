@@ -124,7 +124,9 @@ def describe(plugin: Any) -> dict[str, Any]:
     for name, section in schema.items():
         if not isinstance(section, dict):
             continue
-        rows = _flatten(section)
+        # 关键：必须带分组前缀（general.enabled），否则前端提交短名
+        # 会过不了后端的 _allowed_keys 校验（真机报「这些配置项不存在：enabled」）。
+        rows = _flatten(section, trail=name)
         if not rows:
             continue
         # 当前值
