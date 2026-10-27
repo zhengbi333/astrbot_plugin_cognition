@@ -1,6 +1,12 @@
 # 更新日志
 
-## alpha-1.1.0（当前）
+## alpha-1.2.0（当前）
+
+- **并行执行** `toolbox_parallel`：几段互不依赖的脚本同时跑（默认 3 路，可配到 6），每路独立超时与输出上限，单路失败不影响其它；实测三段各 1.2s 的脚本总耗时 <2.6s。
+- **等任务** `toolbox_task_wait`：一次等到后台任务结束，不用反复查。
+- 新用例 `audit_71` **23/23**。详见 [changelogs/alpha-1.2.0.md](changelogs/alpha-1.2.0.md)。
+
+## alpha-1.1.0
 
 - **新增技能库**：`toolbox_skill_list` / `toolbox_skill`，把「一类活的标准做法」写成 `skills/*.md`，模型按需取用；内置三个示例（做周报 / 整理会议记录 / 批量改文件名）。**模型只能读不能写**，技能也不能改变权限。
 - 新用例 `audit_70` **22/22**。详见 [changelogs/alpha-1.1.0.md](changelogs/alpha-1.1.0.md)。

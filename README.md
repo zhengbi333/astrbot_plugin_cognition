@@ -7,7 +7,7 @@
 **也能把做好的文档直接发给你**（`toolbox_send_file`）；
 **更能接住「没有现成工具」的活**：`toolbox_python` 让她当场写一段脚本把事做完——**只对你的账号开放**。
 
-- 版本：`alpha-1.1.0`
+- 版本：`alpha-1.2.0`
 - AstrBot 版本：`>= 4.22.0`
 - 更新日志：见 [changelogs/](changelogs/)
 
@@ -38,6 +38,8 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 | **`toolbox_archive`** | 打包 / 解包（zip、tar；解包防路径穿越与压缩炸弹） | 开 |
 | **`toolbox_skill_list`** | 列出可用「技能」（一类活的标准做法），可按关键词过滤 | 开 |
 | **`toolbox_skill`** | 取某份技能的完整流程，照着做 | 开 |
+| **`toolbox_parallel`** | **并行跑**几段互不依赖的脚本，一起等结果 | 开（仅主人） |
+| **`toolbox_task_wait`** | 等后台任务跑完（省得反复查） | 开（仅主人） |
 | **`toolbox_python`** | **任意任务**：在工作区写并运行 Python 脚本（pandas/numpy/docx/openpyxl/pptx/Pillow） | 开（**仅主人**） |
 | **`toolbox_task_start`** | **后台任务**：把耗时脚本丢后台跑，立刻拿任务号 | 开（**仅主人**） |
 | **`toolbox_task_status`** | 查后台任务：状态、耗时、退出码、最近输出 | 开（**仅主人**） |

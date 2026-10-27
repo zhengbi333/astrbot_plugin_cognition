@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -30,6 +31,7 @@ from . import notes as notes_mod
 from . import notify as notify_mod
 from . import archive as archive_mod
 from . import image_ops as image_mod
+from . import parallel as parallel_mod
 from . import pdfgen as pdf_mod
 from . import policy as policy_mod
 from . import workspace_policy as ws_policy
@@ -54,6 +56,8 @@ _TOOL_TITLES = {
     "doc_export": "导出 PDF",
     "skill_list": "技能清单",
     "skill": "取技能流程",
+    "parallel": "并行执行",
+    "task_wait": "等任务完成",
     "image": "处理图片",
     "archive": "打包解包",
     "poke": "戳一戳",
@@ -1366,6 +1370,94 @@ class CognitionPlugin(Star):
             f"技能「{skill.name}」的操作流程如下，照着做，需要时再用工具：\n"
             f"-----\n{skill.body}\n-----"
         )
+
+    # ------------------------------------------------------------ 工具：并行执行
+    @filter.llm_tool(name="toolbox_parallel")
+    async def toolbox_parallel_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """**并行**跑几段互不依赖的脚本，一起等结果（比一个个跑快）。
+
+        什么时候用：几件事彼此独立、都挺耗时。比如同时抓三个网站、同时处理三批文件、
+        同时算三种统计。**有先后依赖的活不要用这个**，那种要串行。
+
+        Args:
+            tasks(string): JSON 数组，每项含 name 与 code。例如：
+                [{"name":"抓A","code":"print('A')"},{"name":"抓B","code":"print('B')"}]
+            timeout(number): 单路超时秒数，默认 60，最大 300。
+        """
+        block = self._gate("parallel", "exec.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "exec")
+        if deny:
+            return deny
+        raw = kwargs.get("tasks")
+        try:
+            tasks = parallel_mod.parse_tasks(raw if raw is not None else "")
+        except parallel_mod.ParallelError as exc:
+            self._note_call("parallel", False, str(exc))
+            return f"任务格式有问题：{exc}"
+        try:
+            timeout = float(kwargs.get("timeout") or 60.0)
+        except (TypeError, ValueError):
+            timeout = 60.0
+        timeout = max(5.0, min(300.0, timeout))
+        ws = self.workspace_for(event)
+        try:
+            results = await parallel_mod.run_many(
+                tasks,
+                cwd=ws.root,
+                timeout=timeout,
+                max_output_chars=self._int("exec.max_output_chars", 2000),
+                max_concurrent=self._int("parallel.max_concurrent", 3),
+            )
+        except parallel_mod.ParallelError as exc:
+            self._note_call("parallel", False, str(exc))
+            return f"并行执行失败：{exc}"
+        except Exception as exc:
+            self._note_call("parallel", False, str(exc))
+            return f"并行执行出错：{type(exc).__name__}: {exc}"
+        ok_count = sum(1 for r in results if r.ok)
+        self._note_call("parallel", ok_count == len(results), f"{ok_count}/{len(results)}")
+        return parallel_mod.summarize(results)
+
+    @filter.llm_tool(name="toolbox_task_wait")
+    async def toolbox_task_wait_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """等一个后台任务跑完（或等到超时），省得反复查。
+
+        Args:
+            task_id(string): 任务号。
+            timeout(number): 最多等多少秒，默认 120，最大 600。
+        """
+        block = self._gate("task_wait", "exec.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "task")
+        if deny:
+            return deny
+        task_id = str(kwargs.get("task_id") or "").strip()
+        try:
+            limit = float(kwargs.get("timeout") or 120.0)
+        except (TypeError, ValueError):
+            limit = 120.0
+        limit = max(5.0, min(600.0, limit))
+        try:
+            await self.tasks.cleanup()
+            record = self.tasks.get(task_id)
+        except tasks_mod.TaskError as exc:
+            self._note_call("task_wait", False, str(exc))
+            return str(exc)
+
+        waited = 0.0
+        step = 1.0
+        while record.running and waited < limit:
+            await asyncio.sleep(step)
+            waited += step
+            step = min(3.0, step + 0.5)
+        state = "已结束" if not record.running else f"还在跑（等了 {waited:.0f}s，已到上限）"
+        self._note_call("task_wait", True, f"{task_id} {state}")
+        body = self.tasks.tail(record)
+        code = record.returncode if record.returncode is not None else "未知"
+        return f"任务 {task_id}：{state}（退出码 {code}）\n--- 最近输出 ---\n{body}"
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")

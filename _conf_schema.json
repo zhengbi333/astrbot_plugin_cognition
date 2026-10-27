@@ -290,6 +290,18 @@
       }
     }
   },
+  "parallel": {
+    "description": "并行执行",
+    "type": "object",
+    "items": {
+      "max_concurrent": {
+        "description": "同时最多几路",
+        "type": "int",
+        "default": 3,
+        "hint": "并行跑脚本的并发数（1~6）。太高会把 CPU 抢满，3 一般够用。"
+      }
+    }
+  },
   "notes": {
     "description": "经验条目",
     "type": "object",
