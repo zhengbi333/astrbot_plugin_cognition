@@ -302,6 +302,18 @@
       }
     }
   },
+  "goals": {
+    "description": "长期目标",
+    "type": "object",
+    "items": {
+      "max_open": {
+        "description": "最多几个进行中的目标",
+        "type": "int",
+        "default": 50,
+        "hint": "超过就拒绝新建，逼着先收尾。目标存在 goals.json，跨会话保留。"
+      }
+    }
+  },
   "notes": {
     "description": "经验条目",
     "type": "object",

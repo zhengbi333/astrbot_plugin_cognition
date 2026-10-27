@@ -36,7 +36,10 @@ from . import pdfgen as pdf_mod
 from . import policy as policy_mod
 from . import workspace_policy as ws_policy
 from . import qq_actions as qq_mod
+from . import delegate as delegate_mod
 from . import exec as exec_mod
+from . import fstools as fstools_mod
+from . import goals as goals_mod
 from . import office as office_mod
 from .audit import AuditLog, Quota
 from .workspace import Workspace, WorkspaceError, human_size, safe_filename_from_url
@@ -58,6 +61,10 @@ _TOOL_TITLES = {
     "skill": "取技能流程",
     "parallel": "并行执行",
     "task_wait": "等任务完成",
+    "edit": "精确编辑",
+    "glob": "模式查找",
+    "goal": "长期目标",
+    "delegate": "子代理",
     "image": "处理图片",
     "archive": "打包解包",
     "poke": "戳一戳",
@@ -168,6 +175,16 @@ class CognitionPlugin(Star):
                 allow_write=self._bool("fs.allow_write", True),
             )
         return self._workspace
+
+    @property
+    def goals(self) -> goals_mod.GoalStore:
+        """长期目标库（goals.json，跨会话保留）。"""
+        if getattr(self, "_goal_store", None) is None:
+            self._goal_store = goals_mod.GoalStore(
+                self.data_dir / "goals.json",
+                max_goals=self._int("goals.max_open", 50),
+            )
+        return self._goal_store
 
     @property
     def skills_root(self) -> Path:
@@ -1458,6 +1475,169 @@ class CognitionPlugin(Star):
         body = self.tasks.tail(record)
         code = record.returncode if record.returncode is not None else "未知"
         return f"任务 {task_id}：{state}（退出码 {code}）\n--- 最近输出 ---\n{body}"
+
+    # ------------------------------------------------------------ 工具：精确编辑 / 查找 / 目标 / 子代理
+    @filter.llm_tool(name="toolbox_edit")
+    async def toolbox_edit_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """**精确编辑**文件：把文件里的一小段原文换成新内容（不用重写整份）。
+
+        比 fs_write 安全：只动你指定的那一段，其它内容原样保留。
+        要替换的原文必须**唯一存在**，否则会报错让你写得更具体。
+
+        Args:
+            path(string): 文件在工作区里的相对路径。
+            old_text(string): 要被替换的原文（要足够独特，只匹配一处）。
+            new_text(string): 替换成什么。
+            replace_all(boolean): 是否替换所有匹配（默认 false）。
+        """
+        block = self._gate("edit", "fs.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "write")
+        if deny:
+            return deny
+        path = str(kwargs.get("path") or "").strip()
+        old_text = str(kwargs.get("old_text") or "")
+        new_text = str(kwargs.get("new_text") or "")
+        replace_all = kwargs.get("replace_all") is True
+        try:
+            ws = self.workspace_for(event)
+            target = ws.resolve(path, must_exist=True)
+            result = fstools_mod.edit_text(
+                target, old_text=old_text, new_text=new_text, replace_all=replace_all
+            )
+            self._note_call("edit", True, path)
+            return (
+                f"已修改「{ws.relpath(target)}」：替换 {result.replaced} 处，"
+                f"{result.before_bytes} → {result.after_bytes} 字节。\n片段：{result.preview}"
+            )
+        except (fstools_mod.FsToolError, WorkspaceError) as exc:
+            self._note_call("edit", False, str(exc))
+            return f"编辑失败：{exc}"
+        except Exception as exc:
+            self._note_call("edit", False, str(exc))
+            return f"编辑出错：{type(exc).__name__}: {exc}"
+
+    @filter.llm_tool(name="toolbox_glob")
+    async def toolbox_glob_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """按通配符查找文件（支持 `**` 递归），按修改时间倒序返回。
+
+        找文件用这个，比一层层 fs_list 快。
+
+        Args:
+            pattern(string): 模式，例如 `*.md`、`notes/**/*.txt`、`**/*.py`。
+            limit(number): 最多返回多少条，默认 30。
+        """
+        block = self._gate("glob", "fs.enabled")
+        if block:
+            return block
+        pattern = str(kwargs.get("pattern") or "").strip()
+        try:
+            limit = int(kwargs.get("limit") or 30)
+        except (TypeError, ValueError):
+            limit = 30
+        try:
+            ws = self.workspace_for(event)
+            hits = fstools_mod.glob_files(ws.root, pattern, limit=max(1, min(200, limit)))
+            self._note_call("glob", True, pattern)
+            if not hits:
+                return f"没有匹配「{pattern}」的文件。"
+            lines = [f"匹配「{pattern}」共 {len(hits)} 个（按修改时间倒序）："]
+            for hit in hits:
+                size = "" if hit.is_dir else f"  {human_size(hit.size)}"
+                lines.append(f"  {hit.path}{'/' if hit.is_dir else ''}{size}  {fstools_mod.human_mtime(hit.mtime)}")
+            return "\n".join(lines)
+        except (fstools_mod.FsToolError, WorkspaceError) as exc:
+            self._note_call("glob", False, str(exc))
+            return f"查找失败：{exc}"
+        except Exception as exc:
+            self._note_call("glob", False, str(exc))
+            return f"查找出错：{type(exc).__name__}: {exc}"
+
+    @filter.llm_tool(name="toolbox_goal")
+    async def toolbox_goal_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """长期目标：跨会话记住「要做成什么事」（不是"说过要做"，是"要达成的结果"）。
+
+        Args:
+            action(string): list（列出）/ add（新建）/ update（改备注）/ done（完成）/ drop（放弃）。
+            goal_id(string): 目标编号（update/done/drop 时要）。
+            title(string): add 时的目标描述。
+            note(string): 备注 / 进度。
+        """
+        block = self._gate("goal", "general.enabled")
+        if block:
+            return block
+        action = str(kwargs.get("action") or "list").strip().lower()
+        goal_id = str(kwargs.get("goal_id") or "").strip()
+        title = str(kwargs.get("title") or "").strip()
+        note = str(kwargs.get("note") or "").strip()
+        try:
+            if action == "list":
+                include_closed = kwargs.get("note") == "all" or str(kwargs.get("title") or "") == "all"
+                items = self.goals.list(include_closed=include_closed)
+                self._note_call("goal", True, "list")
+                if not items:
+                    return "现在没有进行中的目标。"
+                return "目标：\n" + "\n".join(g.line() for g in items)
+            if action == "add":
+                goal = self.goals.add(title, note)
+                self._note_call("goal", True, f"add {goal.id}")
+                return f"已立目标 [{goal.id}]：{goal.title}"
+            if action == "update":
+                goal = self.goals.update(goal_id, note=note)
+                self._note_call("goal", True, f"update {goal.id}")
+                return f"目标 [{goal.id}] 已更新：{goal.title}（备注：{goal.note or '无'}）"
+            if action in ("done", "drop"):
+                state = "done" if action == "done" else "dropped"
+                goal = self.goals.close(goal_id, state=state, note=note)
+                self._note_call("goal", True, f"{action} {goal.id}")
+                return f"目标 [{goal.id}] 已{'完成' if state == 'done' else '放弃'}：{goal.title}"
+            return f"不认识的动作：{action}（支持 list/add/update/done/drop）"
+        except goals_mod.GoalError as exc:
+            self._note_call("goal", False, str(exc))
+            return f"目标操作失败：{exc}"
+        except Exception as exc:
+            self._note_call("goal", False, str(exc))
+            return f"目标操作出错：{type(exc).__name__}: {exc}"
+
+    @filter.llm_tool(name="toolbox_delegate")
+    async def toolbox_delegate_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """把一件**独立的小事**交给「另一个自己」处理（不共享当前对话上下文）。
+
+        适合：需要单独想清楚的一段推理/写作/评审/翻译，不想让当前对话干扰它。
+        它会用同一个模型跑一次独立请求，只带任务与材料，返回结果。
+        **不适合**：需要当前对话上下文的事（它看不到）、需要动手的事（它没有工具）。
+
+        Args:
+            task(string): 要它做什么（简短明确）。
+            material(string): 相关材料，可省略（上限 4000 字）。
+        """
+        block = self._gate("delegate", "exec.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "exec")
+        if deny:
+            return deny
+        task = str(kwargs.get("task") or "").strip()
+        material = str(kwargs.get("material") or "")
+        try:
+            provider = self.context.get_using_provider()
+        except Exception:
+            provider = None
+        if provider is None:
+            self._note_call("delegate", False, "无可用 provider")
+            return "现在没有可用的模型，交不出去。"
+        try:
+            result = await delegate_mod.delegate(provider, task=task, material=material)
+            self._note_call("delegate", True, task[:40])
+            head = f"（子代理 · {result.model}）" if result.model else "（子代理）"
+            return f"{head}\n{result.text}"
+        except delegate_mod.DelegateError as exc:
+            self._note_call("delegate", False, str(exc))
+            return f"子代理失败：{exc}"
+        except Exception as exc:
+            self._note_call("delegate", False, str(exc))
+            return f"子代理出错：{type(exc).__name__}: {exc}"
 
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")
