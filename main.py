@@ -786,7 +786,14 @@ class CognitionPlugin(Star):
 
     @filter.llm_tool(name="toolbox_doc_write")
     async def toolbox_doc_write_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
-        """在工作区里新建一个 Office 文档：.docx 按行写段落，.xlsx 按行写表格。
+        """写一份文档文件（.docx / .txt / .md / .xlsx）。
+
+        **什么时候用**：对方说「做个文档」「写个 Word」「做份报告 / 纪要 / 总结 / 汇报」
+        「存成文件」「帮我整理成文档」—— 这些都是**写文件**，用这个工具。
+        **不要**用拍照/画图/生图来应付这类请求，那只会得到一张图片，不是文件。
+
+        **怎么用**：.docx 按行写段落（一行一段）；.xlsx 用 ` | ` 分隔列（逗号分隔会报错）。
+        写完用 `toolbox_send_file` 把文件发出去，别只说「做好了」。
 
         Args:
             path(string): 相对文件路径，扩展名决定格式，例如 "notes/report.docx"。
