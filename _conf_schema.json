@@ -11,6 +11,69 @@
       }
     }
   },
+  "auth": {
+    "description": "谁能用（账号分级）",
+    "type": "object",
+    "items": {
+      "admins": {
+        "description": "管理员 QQ 号",
+        "type": "string",
+        "default": "",
+        "hint": "逗号分隔。留空则回退用 exec.owner_ids。管理员才能用代码执行、后台任务、shell、以及全盘访问（workspace.access=full）。"
+      },
+      "members": {
+        "description": "成员 QQ 号",
+        "type": "string",
+        "default": "",
+        "hint": "逗号分隔。成员可以读写工作区、做文档、发文件，但不能执行代码/后台任务。"
+      },
+      "members_open": {
+        "description": "未登记的人算成员",
+        "type": "bool",
+        "default": false,
+        "hint": "关（默认）时不在名单里的人只是访客：只能聊天、搜索、读资料。开则等于把写权限给所有人。"
+      }
+    }
+  },
+  "workspace": {
+    "description": "工作区与会话分配",
+    "type": "object",
+    "items": {
+      "mode": {
+        "description": "工作区模式",
+        "type": "string",
+        "default": "shared",
+        "options": [
+          "shared",
+          "per_session",
+          "mapped"
+        ],
+        "hint": "shared=所有会话共用一个；per_session=每个会话独立子目录（互不可见）；mapped=按下面映射把某个会话分到指定目录。"
+      },
+      "mapped": {
+        "description": "会话→目录映射（JSON）",
+        "type": "text",
+        "default": "{}",
+        "hint": "仅 mode=mapped 生效。JSON 对象，键是会话标识，值是绝对路径；键写 \"*\" 表示默认目录。例：{\"*\": \"G:/bot/work\"}。"
+      },
+      "access": {
+        "description": "访问级别",
+        "type": "string",
+        "default": "workspace",
+        "options": [
+          "workspace",
+          "full"
+        ],
+        "hint": "workspace=只能访问本会话工作区（默认）；full=可访问工作区之外，但只有管理员能用，非管理员自动降级。"
+      },
+      "full_roots": {
+        "description": "全盘模式的允许根目录",
+        "type": "string",
+        "default": "",
+        "hint": "access=full 时只允许在这些目录读写（逗号分隔绝对路径）。留空 = 真的不限制全盘，务必想清楚。"
+      }
+    }
+  },
   "fs": {
     "description": "文件工具（工作区内）",
     "type": "object",

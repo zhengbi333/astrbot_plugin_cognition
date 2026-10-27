@@ -27,6 +27,11 @@ from . import tasks as tasks_mod
 from . import web as web_mod
 from . import notes as notes_mod
 from . import notify as notify_mod
+from . import archive as archive_mod
+from . import image_ops as image_mod
+from . import pdfgen as pdf_mod
+from . import policy as policy_mod
+from . import workspace_policy as ws_policy
 from . import qq_actions as qq_mod
 from . import exec as exec_mod
 from . import office as office_mod
@@ -45,6 +50,9 @@ _TOOL_TITLES = {
     "doc_read": "读文档",
     "doc_write": "写文档",
     "send_file": "发送文件",
+    "doc_export": "导出 PDF",
+    "image": "处理图片",
+    "archive": "打包解包",
     "poke": "戳一戳",
     "like": "点赞",
     "audit": "调用审计",
@@ -151,6 +159,40 @@ class CognitionPlugin(Star):
             )
         return self._workspace
 
+    def principal_for(self, event: Any) -> policy_mod.Principal:
+        """当前说话人的身份等级（认不出 → 访客）。"""
+        return policy_mod.resolve_principal(self, event)
+
+    def plan_for(self, event: Any) -> ws_policy.WorkspacePlan:
+        """按配置与会话算工作区计划（模式 + 访问级别 + 允许的根）。"""
+        return ws_policy.resolve_plan(self, event, principal=self.principal_for(event))
+
+    def workspace_for(self, event: Any) -> Workspace:
+        """取"这次对话"该用的工作区。配置异常时安全回退到共用工作区。"""
+        try:
+            plan = self.plan_for(event)
+            return Workspace(
+                plan.root,
+                max_read_bytes=self._int("fs.max_read_bytes", 262144),
+                max_write_bytes=self._int("fs.max_write_bytes", 1048576),
+                max_download_bytes=self._int("download.max_bytes", 52428800),
+                max_list_entries=self._int("fs.max_list_entries", 200),
+                allow_write=self._bool("fs.allow_write", True),
+                access=plan.access,
+                extra_roots=plan.extra_roots,
+            )
+        except Exception as exc:
+            logger.warning("[Toolbox] 解析工作区失败，回退到共用工作区: %s", exc)
+            return self.workspace
+
+    def _allow(self, event: Any, action: str) -> str:
+        """权限门：按身份等级判断这个动作能不能做。返回空串表示放行。"""
+        principal = self.principal_for(event)
+        if policy_mod.can(principal, action):
+            return ""
+        self._note_call(action, False, f"权限不足：{principal.level}")
+        return policy_mod.deny_reason(principal, action)
+
     @property
     def tasks(self) -> tasks_mod.TaskManager:
         """后台任务表（首次使用时按当前配置创建）。"""
@@ -253,7 +295,7 @@ class CognitionPlugin(Star):
         if block:
             return block
         try:
-            data = self.workspace.summary()
+            data = self.workspace_for(event).summary()
             lines = [
                 f"工作区目录：{self.workspace_root}",
                 f"里面已有 {data['files']} 个文件 / {data['dirs']} 个子目录，共 {human_size(int(data['bytes']))}",
@@ -296,7 +338,7 @@ class CognitionPlugin(Star):
             return block
         path = str(kwargs.get("path") or "").strip()
         try:
-            rel, items = self.workspace.list_dir(path)
+            rel, items = self.workspace_for(event).list_dir(path)
             if not items:
                 self._note_call("fs_list", True, rel)
                 return f"目录「{rel}」是空的。"
@@ -338,7 +380,7 @@ class CognitionPlugin(Star):
         except (TypeError, ValueError):
             tail = 0
         try:
-            text, size = self.workspace.read_text(path, head=head, tail=tail)
+            text, size = self.workspace_for(event).read_text(path, head=head, tail=tail)
             self._note_call("fs_read", True, path)
             if not text.strip():
                 return f"文件「{path}」是空的（{size} 字节）。"
@@ -362,12 +404,15 @@ class CognitionPlugin(Star):
         block = self._gate("fs_write", "fs.enabled")
         if block:
             return block
+        deny = self._allow(event, "write")
+        if deny:
+            return deny
         path = str(kwargs.get("path") or "").strip()
         content = str(kwargs.get("content") or "")
         overwrite_raw = kwargs.get("overwrite", True)
         overwrite = overwrite_raw if isinstance(overwrite_raw, bool) else str(overwrite_raw).lower() not in ("0", "false", "否")
         try:
-            saved = self.workspace.write_text(path, content, overwrite=overwrite)
+            saved = self.workspace_for(event).write_text(path, content, overwrite=overwrite)
             self._note_call("fs_write", True, saved)
             return f"已写入「{saved}」（{human_size(len(content.encode('utf-8')))}）。"
         except WorkspaceError as exc:
@@ -398,7 +443,7 @@ class CognitionPlugin(Star):
         except (TypeError, ValueError):
             max_hits = 30
         try:
-            hits, scanned = self.workspace.search_text(
+            hits, scanned = self.workspace_for(event).search_text(
                 pattern, relative=path, glob=glob, max_hits=max(1, min(100, max_hits))
             )
             self._note_call("fs_search", True, pattern)
@@ -496,6 +541,9 @@ class CognitionPlugin(Star):
         block = self._gate("download", "download.enabled")
         if block:
             return block
+        deny = self._allow(event, "download")
+        if deny:
+            return deny
         url = str(kwargs.get("url") or "").strip()
         target = str(kwargs.get("path") or "").strip()
         allowed_ext = self._str("download.allow_extensions", "")
@@ -513,7 +561,7 @@ class CognitionPlugin(Star):
                 allowed = {x.strip().lower().lstrip(".") for x in allowed_ext.replace("，", ",").split(",") if x.strip()}
                 if allowed and suffix not in allowed:
                     return f"这个类型不允许下载（{suffix or '无扩展名'}）；允许：{'、'.join(sorted(allowed))}"
-            saved = self.workspace.save_bytes(target, data)
+            saved = self.workspace_for(event).save_bytes(target, data)
             self._note_call("download", True, saved)
             await self._remember_action(
                 event, kind="download",
@@ -544,6 +592,9 @@ class CognitionPlugin(Star):
         block = self._gate("learn", "web.fetch_enabled")
         if block:
             return block
+        deny = self._allow(event, "write")
+        if deny:
+            return deny
         url = str(kwargs.get("url") or "").strip()
         query = str(kwargs.get("query") or "").strip()
         title = str(kwargs.get("title") or "").strip()
@@ -596,7 +647,7 @@ class CognitionPlugin(Star):
                 max_body_chars=self._int("notes.max_chars", 6000),
             )
             directory = self._str("notes.dir", "notes").strip() or "notes"
-            saved = self.workspace.write_text(f"{directory}/{filename}", note)
+            saved = self.workspace_for(event).write_text(f"{directory}/{filename}", note)
             excerpt, truncated = notes_mod.summarize_for_reply(note)
             self._note_call("learn", True, saved)
             await self._remember_action(
@@ -632,7 +683,7 @@ class CognitionPlugin(Star):
             return block
         path = str(kwargs.get("path") or "").strip()
         try:
-            target = self.workspace.resolve(path, must_exist=True)
+            target = self.workspace_for(event).resolve(path, must_exist=True)
             suffix = target.suffix.lower()
             if suffix == ".docx":
                 result = office_mod.read_docx(
@@ -691,6 +742,9 @@ class CognitionPlugin(Star):
         block = self._gate("doc_write", "fs.enabled")
         if block:
             return block
+        deny = self._allow(event, "office")
+        if deny:
+            return deny
         if not self._bool("fs.allow_write", True):
             return "工作区现在是只读的，不能写文档。"
         path = str(kwargs.get("path") or "").strip()
@@ -701,7 +755,7 @@ class CognitionPlugin(Star):
         if not path:
             return "要给个文件名，例如 notes/report.docx。"
         try:
-            target = self.workspace.resolve(path)
+            target = self.workspace_for(event).resolve(path)
             suffix = target.suffix.lower()
             if suffix == ".docx":
                 lines = [line.rstrip() for line in content.splitlines()]
@@ -710,10 +764,10 @@ class CognitionPlugin(Star):
                 self._note_call("doc_write", True, path)
                 await self._remember_action(
                     event, kind="doc_write",
-                    text=f"我做了一份文档 {self.workspace.relpath(target)}（docx，{count} 段）。",
-                    meta={"path": self.workspace.relpath(target), "format": "docx"},
+                    text=f"我做了一份文档 {self.workspace_for(event).relpath(target)}（docx，{count} 段）。",
+                    meta={"path": self.workspace_for(event).relpath(target), "format": "docx"},
                 )
-                return f"已生成「{self.workspace.relpath(target)}」（docx，{count} 段，{human_size(size)}）。"
+                return f"已生成「{self.workspace_for(event).relpath(target)}」（docx，{count} 段，{human_size(size)}）。"
             if suffix in (".xlsx", ".xlsm"):
                 rows = office_mod.parse_rows(content)
                 if not rows:
@@ -723,10 +777,10 @@ class CognitionPlugin(Star):
                 self._note_call("doc_write", True, path)
                 await self._remember_action(
                     event, kind="doc_write",
-                    text=f"我做了一份表格 {self.workspace.relpath(target)}（xlsx，{count} 行）。",
-                    meta={"path": self.workspace.relpath(target), "format": "xlsx"},
+                    text=f"我做了一份表格 {self.workspace_for(event).relpath(target)}（xlsx，{count} 行）。",
+                    meta={"path": self.workspace_for(event).relpath(target), "format": "xlsx"},
                 )
-                return f"已生成「{self.workspace.relpath(target)}」（xlsx，{count} 行，{human_size(size)}）。"
+                return f"已生成「{self.workspace_for(event).relpath(target)}」（xlsx，{count} 行，{human_size(size)}）。"
             if suffix == ".pptx":
                 slides = office_mod.parse_slides(content)
                 if not slides:
@@ -740,11 +794,11 @@ class CognitionPlugin(Star):
                 self._note_call("doc_write", True, path)
                 await self._remember_action(
                     event, kind="doc_write",
-                    text=f"我做了一份幻灯片 {self.workspace.relpath(target)}（pptx，{count} 页正文）。",
-                    meta={"path": self.workspace.relpath(target), "format": "pptx"},
+                    text=f"我做了一份幻灯片 {self.workspace_for(event).relpath(target)}（pptx，{count} 页正文）。",
+                    meta={"path": self.workspace_for(event).relpath(target), "format": "pptx"},
                 )
                 return (
-                    f"已生成「{self.workspace.relpath(target)}」（pptx，{count} 页正文"
+                    f"已生成「{self.workspace_for(event).relpath(target)}」（pptx，{count} 页正文"
                     + ("，含封面" if title else "") + f"，{human_size(size)}）。"
                 )
             return (
@@ -794,10 +848,13 @@ class CognitionPlugin(Star):
         block = self._gate("send_file", "send.enabled")
         if block:
             return block
+        deny = self._allow(event, "send")
+        if deny:
+            return deny
         path = str(kwargs.get("path") or "").strip()
         caption = str(kwargs.get("caption") or "").strip()
         try:
-            target = self.workspace.resolve(path, must_exist=True)
+            target = self.workspace_for(event).resolve(path, must_exist=True)
             if target.is_dir():
                 return "这是目录，不能当文件发。"
             size = target.stat().st_size
@@ -819,10 +876,10 @@ class CognitionPlugin(Star):
             self._note_call("send_file", True, path)
             await self._remember_action(
                 event, kind="send_file",
-                text=f"我把 {self.workspace.relpath(target)} 发到了当前会话（{human_size(size)}）。",
-                meta={"path": self.workspace.relpath(target)},
+                text=f"我把 {self.workspace_for(event).relpath(target)} 发到了当前会话（{human_size(size)}）。",
+                meta={"path": self.workspace_for(event).relpath(target)},
             )
-            return f"已把「{self.workspace.relpath(target)}」（{human_size(size)}）发到这个会话。"
+            return f"已把「{self.workspace_for(event).relpath(target)}」（{human_size(size)}）发到这个会话。"
         except WorkspaceError as exc:
             self._note_call("send_file", False, str(exc))
             return f"发文件失败：{exc}"
@@ -852,6 +909,9 @@ class CognitionPlugin(Star):
         block = self._gate("python", "exec.enabled")
         if block:
             return block
+        deny = self._allow(event, "exec")
+        if deny:
+            return deny
         denied = self._owner_denied(event, tool="python")
         if denied:
             return denied
@@ -864,7 +924,7 @@ class CognitionPlugin(Star):
         try:
             result = await exec_mod.run_python(
                 code,
-                cwd=self.workspace_root,
+                cwd=self.workspace_for(event).root,
                 timeout=timeout,
                 max_output_chars=self._int("exec.max_output_chars", 4000),
                 max_code_chars=self._int("exec.max_code_chars", 20000),
@@ -903,6 +963,9 @@ class CognitionPlugin(Star):
         block = self._gate("task_start", "exec.enabled")
         if block:
             return block
+        deny = self._allow(event, "task")
+        if deny:
+            return deny
         denied = self._owner_denied(event)
         if denied:
             return denied
@@ -936,6 +999,9 @@ class CognitionPlugin(Star):
         block = self._gate("task_status", "exec.enabled")
         if block:
             return block
+        deny = self._allow(event, "task")
+        if deny:
+            return deny
         denied = self._owner_denied(event)
         if denied:
             return denied
@@ -969,6 +1035,9 @@ class CognitionPlugin(Star):
         block = self._gate("task_stop", "exec.enabled")
         if block:
             return block
+        deny = self._allow(event, "task")
+        if deny:
+            return deny
         denied = self._owner_denied(event)
         if denied:
             return denied
@@ -1048,6 +1117,185 @@ class CognitionPlugin(Star):
         self._note_call("like", True, result)
         return result
 
+    # ------------------------------------------------------------ 工具：PDF / 图片 / 压缩包
+    @filter.llm_tool(name="toolbox_doc_export")
+    async def toolbox_doc_export_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """把工作区里的文档导出成 PDF（不需要装 LibreOffice）。
+
+        支持：.docx（段落+表格）、.xlsx（表格）、.pptx（每页幻灯片）、.txt/.md 纯文本。
+        导出后可以用 toolbox_send_file 发给对方。
+
+        Args:
+            path(string): 源文件在工作区里的相对路径。
+            out(string): 输出 PDF 的路径，省略则在同目录用同名 .pdf。
+            title(string): PDF 标题，省略则用文件名。
+        """
+        block = self._gate("doc_export", "fs.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "office")
+        if deny:
+            return deny
+        path = str(kwargs.get("path") or "").strip()
+        title = str(kwargs.get("title") or "").strip()
+        try:
+            ws = self.workspace_for(event)
+            source = ws.resolve(path, must_exist=True)
+            suffix = source.suffix.lower()
+            out_path = ws.resolve(str(kwargs.get("out") or "").strip() or f"{source.stem}.pdf")
+            if out_path.suffix.lower() != ".pdf":
+                out_path = out_path.with_suffix(".pdf")
+
+            if suffix == ".docx":
+                doc = office_mod.read_docx(source, max_chars=self._int("office.max_chars", 8000) * 4)
+                result = pdf_mod.text_to_pdf(doc.text, out_path, title=title or source.stem)
+            elif suffix in (".xlsx", ".xlsm"):
+                book = office_mod.read_xlsx(source, max_rows=200, max_chars=20000)
+                rows = [line.split(" | ") for line in book.text.splitlines() if line and not line.startswith("[工作表")]
+                result = pdf_mod.table_to_pdf(rows, out_path, title=title or source.stem)
+            elif suffix == ".pptx":
+                deck = office_mod.read_pptx(source, max_slides=60, max_chars=20000)
+                blocks = [b for b in deck.text.split("\n\n") if b.strip()]
+                slides = []
+                for block in blocks:
+                    lines = [x for x in block.splitlines() if x.strip()]
+                    if not lines:
+                        continue
+                    slides.append((lines[0].replace("[第 ", "第 ").replace(" 页]", ""), lines[1:]))
+                result = pdf_mod.slides_to_pdf(slides, out_path, title=title or source.stem)
+            elif suffix in (".txt", ".md", ".csv", ".log"):
+                text, _ = ws.read_text(path)
+                result = pdf_mod.text_to_pdf(text, out_path, title=title or source.stem)
+            else:
+                return f"这个格式导不了 PDF：{suffix or '无扩展名'}（支持 docx/xlsx/pptx/txt/md/csv）"
+
+            self._note_call("doc_export", True, str(out_path))
+            await self._remember_action(
+                event, kind="doc_export",
+                text=f"我把 {ws.relpath(source)} 导出成了 PDF（{result.pages} 页）：{ws.relpath(out_path)}。",
+                meta={"source": ws.relpath(source), "pdf": ws.relpath(out_path)},
+            )
+            return (
+                f"已导出 PDF：「{ws.relpath(out_path)}」（{result.pages} 页，{human_size(result.bytes)}）。\n"
+                f"说明：{result.note}"
+            )
+        except (pdf_mod.PdfError, office_mod.OfficeError, WorkspaceError) as exc:
+            self._note_call("doc_export", False, str(exc))
+            return f"导出 PDF 失败：{exc}"
+        except Exception as exc:
+            self._note_call("doc_export", False, str(exc))
+            return f"导出 PDF 出错：{type(exc).__name__}: {exc}"
+
+    @filter.llm_tool(name="toolbox_image")
+    async def toolbox_image_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """处理图片：缩放 / 压缩 / 加水印 / 转换格式（不需要装图像软件）。
+
+        Args:
+            path(string): 图片在工作区里的相对路径。
+            op(string): resize（缩放）/ compress（压缩）/ watermark（水印）/ convert（转换格式）。
+            width(number): resize 时的目标宽，0 表示按比例。
+            height(number): resize 时的目标高，0 表示按比例。
+            quality(number): compress 的质量 10~95，默认 70。
+            text(string): watermark 的文字。
+            fmt(string): convert 的目标格式（png/jpg/webp/bmp）。
+            out(string): 输出路径，省略自动命名。
+        """
+        block = self._gate("image", "fs.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "image")
+        if deny:
+            return deny
+        path = str(kwargs.get("path") or "").strip()
+        op = str(kwargs.get("op") or "resize").strip().lower()
+        try:
+            ws = self.workspace_for(event)
+            source = ws.resolve(path, must_exist=True)
+            out_raw = str(kwargs.get("out") or "").strip()
+            out_path = ws.resolve(out_raw) if out_raw else None
+            for key in ("width", "height", "quality"):
+                if kwargs.get(key) in ("", None):
+                    kwargs[key] = 0
+            result = image_mod.run_op(
+                source, op,
+                width=int(kwargs.get("width") or 0),
+                height=int(kwargs.get("height") or 0),
+                quality=int(kwargs.get("quality") or 70),
+                text=str(kwargs.get("text") or ""),
+                fmt=str(kwargs.get("fmt") or "png"),
+                out=str(out_path) if out_path else "",
+            )
+            self._note_call("image", True, f"{op} {result.path.name}")
+            saved = result.path if out_path else result.path
+            rel = ws.relpath(saved)
+            return f"图片已处理（{op}）：「{rel}」{result.width}x{result.height}，{human_size(result.bytes)}。{result.note}"
+        except (image_mod.ImageOpError, WorkspaceError) as exc:
+            self._note_call("image", False, str(exc))
+            return f"图片处理失败：{exc}"
+        except Exception as exc:
+            self._note_call("image", False, str(exc))
+            return f"图片处理出错：{type(exc).__name__}: {exc}"
+
+    @filter.llm_tool(name="toolbox_archive")
+    async def toolbox_archive_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """打包或解包（zip / tar，不需要装压缩软件）。
+
+        Args:
+            action(string): pack（打包）或 unpack（解包）。
+            paths(string): pack 时用，逗号分隔的工作区相对路径。
+            archive(string): 压缩包路径（pack 时是输出、unpack 时是输入）。
+            dest(string): unpack 的目标目录，省略则在压缩包同名的文件夹里。
+        """
+        block = self._gate("archive", "fs.enabled")
+        if block:
+            return block
+        deny = self._allow(event, "archive")
+        if deny:
+            return deny
+        action = str(kwargs.get("action") or "pack").strip().lower()
+        try:
+            ws = self.workspace_for(event)
+            if action == "pack":
+                raw = str(kwargs.get("paths") or "").strip()
+                if not raw:
+                    return "要打包哪些文件？用逗号分隔给出路径。"
+                files = []
+                for item in raw.replace("，", ",").split(","):
+                    item = item.strip()
+                    if not item:
+                        continue
+                    files.append(ws.resolve(item, must_exist=True))
+                out_raw = str(kwargs.get("archive") or "").strip() or "bundle.zip"
+                out_path = ws.resolve(out_raw)
+                if out_path.suffix.lower() not in (".zip", ".tar", ".gz", ".tgz"):
+                    out_path = out_path.with_suffix(".zip")
+                result = archive_mod.pack(files, out_path, base=ws.root)
+                self._note_call("archive", True, f"pack {result.path.name}")
+                return (
+                    f"已打包「{ws.relpath(result.path)}」：{result.entries} 个文件，"
+                    f"{human_size(result.bytes)}。{result.note}"
+                )
+            if action == "unpack":
+                arc_raw = str(kwargs.get("archive") or "").strip()
+                if not arc_raw:
+                    return "要解哪个压缩包？给我路径。"
+                src = ws.resolve(arc_raw, must_exist=True)
+                dest_raw = str(kwargs.get("dest") or "").strip() or src.stem
+                dest = ws.resolve(dest_raw)
+                result = archive_mod.unpack(src, dest)
+                self._note_call("archive", True, f"unpack {src.name}")
+                return (
+                    f"已解包到「{ws.relpath(dest)}」：{result.entries} 个文件，"
+                    f"{human_size(result.bytes)}。{result.note}"
+                )
+            return f"不认识的动作：{action}（只支持 pack / unpack）"
+        except (archive_mod.ArchiveError, WorkspaceError) as exc:
+            self._note_call("archive", False, str(exc))
+            return f"压缩包操作失败：{exc}"
+        except Exception as exc:
+            self._note_call("archive", False, str(exc))
+            return f"压缩包操作出错：{type(exc).__name__}: {exc}"
+
     # ------------------------------------------------------------ 工具：命令（默认关）
     @filter.llm_tool(name="toolbox_shell_run")
     async def toolbox_shell_run_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
@@ -1059,13 +1307,16 @@ class CognitionPlugin(Star):
         block = self._gate("shell_run", "shell.enabled")
         if block:
             return block
+        deny = self._allow(event, "shell")
+        if deny:
+            return deny
         command = str(kwargs.get("command") or "").strip()
         try:
             allow = shell_mod.parse_allowlist(self._str("shell.allowlist", ""))
             code, output = await shell_mod.run_command(
                 command,
                 allowlist=allow,
-                cwd=self.workspace_root,
+                cwd=self.workspace_for(event).root,
                 timeout=self._float("shell.timeout_seconds", 15.0),
                 max_output_chars=self._int("shell.max_output_chars", 4000),
             )

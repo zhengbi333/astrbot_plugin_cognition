@@ -7,7 +7,7 @@
 **也能把做好的文档直接发给你**（`toolbox_send_file`）；
 **更能接住「没有现成工具」的活**：`toolbox_python` 让她当场写一段脚本把事做完——**只对你的账号开放**。
 
-- 版本：`alpha-0.8.0`
+- 版本：`alpha-1.0.0`
 - AstrBot 版本：`>= 4.22.0`
 - 更新日志：见 [changelogs/](changelogs/)
 
@@ -33,6 +33,9 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 | **`toolbox_send_file`** | **把工作区里的文件发到当前会话**（「把这个文档发我」） | 开 |
 | **`toolbox_poke`** | **戳一戳/拍一拍**：戳当前说话的人（群聊走 group_poke、私聊走 send_poke） | 开 |
 | **`toolbox_like`** | **给名片点赞**（标准 OneBot send_like，单次上限可配） | 开 |
+| **`toolbox_doc_export`** | **导出 PDF**（docx/xlsx/pptx/文本 → PDF，**不需要 LibreOffice**） | 开 |
+| **`toolbox_image`** | 图片缩放 / 压缩 / 水印 / 格式转换（Pillow） | 开 |
+| **`toolbox_archive`** | 打包 / 解包（zip、tar；解包防路径穿越与压缩炸弹） | 开 |
 | **`toolbox_python`** | **任意任务**：在工作区写并运行 Python 脚本（pandas/numpy/docx/openpyxl/pptx/Pillow） | 开（**仅主人**） |
 | **`toolbox_task_start`** | **后台任务**：把耗时脚本丢后台跑，立刻拿任务号 | 开（**仅主人**） |
 | **`toolbox_task_status`** | 查后台任务：状态、耗时、退出码、最近输出 | 开（**仅主人**） |
@@ -74,6 +77,29 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 - 本插件只提供**工具**，不参与聊天回复的人格与记忆。
 - 「为你续写的故事」在**主链放行**模式下能直接用到这些工具（AstrBot 统一注入）。
 - 它的「接管改换」模式用的是插件自己的工具通道，需要额外的桥接（后续版本处理）。
+
+## 谁能用（权限分级）
+
+| 等级 | 谁能 | 能做什么 |
+|---|---|---|
+| **管理员** | `auth.admins` 白名单（留空则回退 `exec.owner_ids`） | 全部：代码执行、后台任务、shell、全盘访问 |
+| **成员** | `auth.members` 白名单 | 读写工作区、做文档、发文件、导出 PDF、处理图片 |
+| **访客** | 其他人（默认） | 只能聊天、搜索、抓网页、读资料 |
+
+`auth.members_open` 打开后，未登记的人算成员（不建议）。
+判不出身份 → 按**访客**处理（fail-closed）。
+
+## 工作区（每个会话可以有自己的）
+
+| 配置 | 说明 |
+|---|---|
+| `workspace.mode=shared` | 所有会话共用一个工作区（默认） |
+| `workspace.mode=per_session` | 每个会话在 `workspace/sessions/<哈希>/` 下独立，互不可见 |
+| `workspace.mode=mapped` | 用 `workspace.mapped` 的 JSON 把某个会话分到指定目录，键写 `*` 表示默认 |
+| `workspace.access=workspace` | 只能访问本会话工作区（默认） |
+| `workspace.access=full` | 可访问工作区之外，**只有管理员能用**，非管理员自动降级；再用 `workspace.full_roots` 限定可访问的根目录（留空=真全盘，慎用） |
+
+工作区只放**运行产物**（脚本、生成的文档、下载的文件、日志）。会话数据归记忆插件，不要混放。
 
 ## 许可
 

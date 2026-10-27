@@ -57,9 +57,15 @@ class Workspace:
         max_download_bytes: int = 50 * 1024 * 1024,
         max_list_entries: int = 200,
         allow_write: bool = True,
+        access: str = "workspace",
+        extra_roots: list[Path] | None = None,
     ) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        # access=workspace：路径监狱（默认）；access=full：允许工作区外，
+        # 但仍受 extra_roots 约束（为空表示真的不限制——只有 admin 能开到这个模式）。
+        self.access = "full" if str(access).lower() == "full" else "workspace"
+        self.extra_roots = [Path(x) for x in (extra_roots or []) if str(x).strip()]
         self.max_read_bytes = max(1024, int(max_read_bytes))
         self.max_write_bytes = max(1024, int(max_write_bytes))
         self.max_download_bytes = max(1024, int(max_download_bytes))
@@ -70,11 +76,14 @@ class Workspace:
     def resolve(self, relative: str, *, must_exist: bool = False) -> Path:
         """把用户给的相对路径解析成工作区内的绝对路径；越界即拒绝。"""
         raw = str(relative or "").strip().replace("\\", "/")
+        is_absolute = bool(raw.startswith("/") or re.match(r"^[A-Za-z]:", raw))
         if raw in ("", "."):
             candidate = self.root
-        else:
-            if raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+        elif is_absolute:
+            if self.access != "full":
                 raise WorkspaceError("只接受工作区内的相对路径（不要用绝对路径）")
+            candidate = Path(raw)
+        else:
             if any(part == ".." for part in raw.split("/")):
                 raise WorkspaceError("路径里不允许出现 `..`")
             candidate = self.root / raw
@@ -82,19 +91,40 @@ class Workspace:
             resolved = candidate.resolve()
         except OSError as exc:
             raise WorkspaceError(f"路径无法解析：{exc}") from exc
-        try:
-            resolved.relative_to(self.root.resolve())
-        except ValueError as exc:
-            raise WorkspaceError("路径越出工作区范围，已拒绝") from exc
+        if not self._inside_allowed(resolved):
+            scope = "允许的根目录" if self.access == "full" else "工作区范围"
+            raise WorkspaceError(f"路径越出{scope}，已拒绝")
         if must_exist and not resolved.exists():
             raise WorkspaceError(f"不存在：{self.relpath(resolved)}")
         return resolved
+
+    def allowed_roots(self) -> list[Path]:
+        """当前允许的根目录：默认只有工作区；full 模式追加配置里的白名单根。"""
+        roots = [self.root.resolve()]
+        if self.access == "full":
+            for item in self.extra_roots:
+                try:
+                    roots.append(Path(item).resolve())
+                except OSError:
+                    continue
+        return roots
+
+    def _inside_allowed(self, resolved: Path) -> bool:
+        for root in self.allowed_roots():
+            try:
+                resolved.relative_to(root)
+                return True
+            except ValueError:
+                continue
+        # full 模式且没有额外白名单根 → 不限制（只有 admin 能开到这个组合）
+        return self.access == "full" and not self.extra_roots
 
     def relpath(self, absolute: Path) -> str:
         try:
             return absolute.resolve().relative_to(self.root.resolve()).as_posix() or "."
         except ValueError:
-            return "?"
+            # full 模式下可能是工作区外的路径：直接给绝对路径，别返回问号
+            return str(absolute.resolve())
 
     def _check_sensitive(self, path: Path) -> None:
         name = path.name
@@ -279,6 +309,7 @@ class Workspace:
                 continue
         return {
             "root": str(self.root),
+            "access": self.access,
             "files": files,
             "dirs": dirs,
             "bytes": total,

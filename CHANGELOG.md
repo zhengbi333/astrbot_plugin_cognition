@@ -1,6 +1,13 @@
 # 更新日志
 
-## alpha-0.8.0（当前）
+## alpha-1.0.0（当前）
+
+- **权限分级**：管理员（`auth.admins`，留空回退 `exec.owner_ids`）/ 成员 / 访客；代码执行、后台任务、shell、全盘访问只给管理员；认不出身份按访客处理（fail-closed）。
+- **工作区按会话分配**：`shared` / `per_session` / `mapped`（可映射到任意绝对路径）；访问级别 `workspace`（默认路径监狱）与 `full`（仅管理员，可配 `full_roots` 限定根目录）。
+- **用 Python 补齐缺失软件**：`toolbox_doc_export`（docx/xlsx/pptx→PDF，**不需要 LibreOffice**）、`toolbox_image`（缩放/压缩/水印/转换）、`toolbox_archive`（打包解包，防 zip slip 与压缩炸弹）。
+- 新用例 `audit_68` **63/63**、`audit_69` **34/34**；单测 149/149。详见 [changelogs/alpha-1.0.0.md](changelogs/alpha-1.0.0.md)。
+
+## alpha-0.8.0
 
 - **新增 QQ 平台社交动作**：`toolbox_poke`（戳一戳/拍一拍）、`toolbox_like`（名片点赞）。走 `bot.call_action` 通用动作通道；**目标只允许当前说话的人或机器人自己**，戳一戳与点赞各自每日限额（默认 20），平台不支持时明确回报。
 - **说明**：QQ 说说（Qzone）一族不在标准 OneBot 协议里（属 SnowLuma 扩展 API），本版**做不到**，不做假装支持。
