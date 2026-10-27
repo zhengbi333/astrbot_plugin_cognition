@@ -117,9 +117,36 @@ def _flatten(node: dict[str, Any], *, trail: str = "") -> list[dict[str, Any]]:
     return rows
 
 
+def read_config_file(plugin: Any) -> dict[str, Any]:
+    """直接读配置文件（面板取值**必须**走这里）。
+
+    为什么不用 `plugin.config.get("auth.admins")`：AstrBot 的配置对象对点号路径不可靠，
+    实测 `auth.admins` 返回 None，导致面板显示空、保存后又变空（用户以为数据丢了）。
+    文件才是唯一真相。
+    """
+    path = _config_file(plugin)
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _nested(raw: dict[str, Any], dotted: str, default: Any = None) -> Any:
+    node = raw
+    for part in str(dotted).split("."):
+        if not isinstance(node, dict) or part not in node:
+            return default
+        node = node[part]
+    return node
+
+
 def describe(plugin: Any) -> dict[str, Any]:
     """给面板的完整配置描述：分组 + 每项的说明 + 当前值。"""
     schema = load_schema(plugin)
+    file_raw = read_config_file(plugin)
     groups: list[dict[str, Any]] = []
     for name, section in schema.items():
         if not isinstance(section, dict):
@@ -129,11 +156,16 @@ def describe(plugin: Any) -> dict[str, Any]:
         rows = _flatten(section, trail=name)
         if not rows:
             continue
-        # 当前值
+        # 当前值：**文件优先**（config 对象对点号路径不可靠）
         for row in rows:
-            try:
-                value = plugin.config.get(row["key"], row["default"])
-            except Exception:
+            sentinel = object()
+            value = _nested(file_raw, row["key"], sentinel)
+            if value is sentinel:
+                try:
+                    value = plugin.config.get(row["key"], row["default"])
+                except Exception:
+                    value = row["default"]
+            if value is None and row["default"] is not None:
                 value = row["default"]
             row["value"] = value
         groups.append({
