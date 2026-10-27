@@ -428,3 +428,74 @@ html, body {
   .stage { padding: 18px 16px 32px; }
   .top { padding: 16px; flex-wrap: wrap; }
 }
+
+/* ---------- 设置页 ---------- */
+.cfg {
+  border: 1px solid var(--line2);
+  background: #26262f;
+  margin-bottom: 6px;
+}
+.cfgrow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(200px, 360px);
+  gap: 16px;
+  align-items: start;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line2);
+}
+.cfgrow:last-child { border-bottom: 0; }
+.cfgrow:hover { background: rgba(255,255,255,0.02); }
+.cfglabel .t { color: var(--fg); font-size: 13px; }
+.cfglabel .d { color: var(--dim); font-size: 11px; line-height: 1.6; margin-top: 2px; }
+.cfglabel .k { color: var(--dimmer); font-size: 10px; letter-spacing: 0.06em; margin-top: 3px; }
+.cfginput input[type="text"],
+.cfginput input[type="number"],
+.cfginput select,
+.cfginput textarea {
+  width: 100%;
+  background: #191920;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 9px;
+  border-radius: 0;
+  outline: none;
+}
+.cfginput textarea { resize: vertical; line-height: 1.5; }
+.cfginput input:focus, .cfginput select:focus, .cfginput textarea:focus { border-color: var(--accent); }
+
+/* 开关 */
+.sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: #191920;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 6px 12px 6px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.sw i {
+  width: 26px; height: 14px;
+  background: #3a3a46;
+  border-radius: 999px;
+  position: relative;
+  transition: background 160ms var(--ease);
+}
+.sw i::after {
+  content: "";
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 10px; height: 10px;
+  background: #8a8a96;
+  border-radius: 999px;
+  transition: all 160ms var(--ease);
+}
+.sw.on { border-color: var(--accent); color: var(--accent); }
+.sw.on i { background: rgba(242,225,76,0.35); }
+.sw.on i::after { left: 14px; background: var(--accent); }

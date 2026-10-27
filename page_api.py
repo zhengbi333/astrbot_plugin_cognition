@@ -21,6 +21,7 @@ from . import PLUGIN_DISPLAY, PLUGIN_NAME, PLUGIN_VERSION
 from . import delegate as delegate_mod
 from . import goals as goals_mod
 from . import skills as skills_mod
+from . import page_config as page_config_mod
 
 try:  # pragma: no cover
     from astrbot.api.web import error_response, json_response
@@ -113,6 +114,8 @@ class CognitionWebApi:
             (f"{prefix}/skills/read", self.skills_read, ["GET"], "Cognition skill detail"),
             (f"{prefix}/audit", self.audit_log, ["GET"], "Cognition recent actions"),
             (f"{prefix}/audit/clear", self.audit_clear, ["POST"], "Cognition audit clear"),
+            (f"{prefix}/config", self.config_read, ["GET"], "Cognition config schema and values"),
+            (f"{prefix}/config/update", self.config_update, ["POST"], "Cognition config update"),
         ]
         for path, handler, methods, desc in routes:
             try:
@@ -302,6 +305,25 @@ class CognitionWebApi:
             return await _ok({"records": records, "total": len(records)})
         except Exception as exc:
             return await _fail(f"读取动作记录失败：{exc}")
+
+    # ------------------------------------------------------------ 设置
+    async def config_read(self) -> Any:
+        """读出全部配置项（含每项的说明与当前值）。"""
+        try:
+            return await _ok(page_config_mod.describe(self._plugin))
+        except Exception as exc:
+            return await _fail(f"读取配置失败：{type(exc).__name__}: {exc}")
+
+    async def config_update(self) -> Any:
+        """写回配置（只认 schema 声明过的键，原子写 + 备份）。"""
+        payload = await _json_body(default={}) or {}
+        try:
+            result = page_config_mod.update(self._plugin, payload)
+            return await _ok(result)
+        except ValueError as exc:
+            return await _fail(str(exc))
+        except Exception as exc:
+            return await _fail(f"保存失败：{type(exc).__name__}: {exc}")
 
     async def audit_clear(self) -> Any:
         try:

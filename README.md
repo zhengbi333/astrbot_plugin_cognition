@@ -7,7 +7,7 @@
 **也能把做好的文档直接发给你**（`toolbox_send_file`）；
 **更能接住「没有现成工具」的活**：`toolbox_python` 让她当场写一段脚本把事做完——**只对你的账号开放**。
 
-- 版本：`alpha-1.5.1`
+- 版本：`alpha-1.5.2`
 - AstrBot 版本：`>= 4.22.0`
 - 更新日志：见 [changelogs/](changelogs/)
 

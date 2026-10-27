@@ -11,7 +11,8 @@ const TABS = [
   { key: "goals", n: "03", label: "目标", title: "长期目标", desc: "跨会话保留，只有显式完成/放弃才结束" },
   { key: "skills", n: "04", label: "技能", title: "技能库", desc: "人写流程、模型只读，存盘即生效" },
   { key: "audit", n: "05", label: "记录", title: "动作记录", desc: "她最近动过什么：工具、成功与否" },
-  { key: "about", n: "06", label: "关于", title: "关于", desc: "插件信息与设计取舍" },
+  { key: "settings", n: "06", label: "设置", title: "设置", desc: "在这里改配置，不用再去点齿轮" },
+  { key: "about", n: "07", label: "关于", title: "关于", desc: "插件信息与设计取舍" },
 ];
 
 const el = (id) => document.getElementById(id);
@@ -239,6 +240,63 @@ function renderAudit(d) {
   return html;
 }
 
+/* ---------------- 渲染：设置 ---------------- */
+function fieldControl(field) {
+  const key = esc(field.key);
+  const value = field.value;
+  if (field.widget === "switch") {
+    const on = value === true || String(value).toLowerCase() === "true";
+    return `<button class="sw ${on ? "on" : ""}" data-key="${key}" data-type="bool"
+      data-value="${on ? "true" : "false"}"><i></i><span>${on ? "开" : "关"}</span></button>`;
+  }
+  if (field.options && field.options.length) {
+    const opts = field.options.map((opt) =>
+      `<option value="${esc(opt)}" ${String(value) === String(opt) ? "selected" : ""}>${esc(opt)}</option>`
+    ).join("");
+    return `<select data-key="${key}" data-type="${esc(field.type)}">${opts}</select>`;
+  }
+  if (field.widget === "textarea") {
+    const text = typeof value === "object" ? JSON.stringify(value, null, 2) : (value == null ? "" : value);
+    return `<textarea data-key="${key}" data-type="${esc(field.type)}" rows="3">${esc(text)}</textarea>`;
+  }
+  if (field.widget === "number") {
+    return `<input type="number" data-key="${key}" data-type="${esc(field.type)}"
+      value="${esc(value == null ? 0 : value)}" />`;
+  }
+  return `<input type="text" data-key="${key}" data-type="${esc(field.type)}"
+    value="${esc(value == null ? "" : value)}" />`;
+}
+
+function renderSettings(d) {
+  const groups = d.groups || [];
+  if (!groups.length) {
+    return '<div class="empty">没读到配置项（schema 可能缺失）</div>';
+  }
+  let html = `<div class="form">
+      <span class="dim" style="flex:1">共 ${d.count || 0} 项 · 改完点「保存」，会自动备份旧配置</span>
+      <button class="btn primary" id="cfg-save">保存</button>
+      <button class="btn ghost" id="cfg-reset">重新读取</button>
+    </div>`;
+  html += `<div class="dim" style="margin:-4px 0 12px;font-size:11px">配置文件：${esc(d.config_file || "")}</div>`;
+
+  for (const group of groups) {
+    html += `<div class="sect"><h3>${esc(group.title)}</h3><div class="rule"></div></div>`;
+    html += '<div class="cfg">';
+    for (const field of group.fields) {
+      html += `<div class="cfgrow">
+        <div class="cfglabel">
+          <div class="t">${esc(field.label)}</div>
+          ${field.hint ? `<div class="d">${esc(field.hint)}</div>` : ""}
+          <div class="k">${esc(field.key)}</div>
+        </div>
+        <div class="cfginput">${fieldControl(field)}</div>
+      </div>`;
+    }
+    html += "</div>";
+  }
+  return html;
+}
+
 /* ---------------- 渲染：关于 ---------------- */
 function renderAbout() {
   return `<div class="grid">
@@ -277,6 +335,7 @@ async function loadTab(key) {
   if (key === "goals") return renderGoals(await apiGet("goals"));
   if (key === "skills") return renderSkills(await apiGet("skills"));
   if (key === "audit") return renderAudit(await apiGet("audit"));
+  if (key === "settings") return renderSettings(await apiGet("config"));
   if (key === "about") return renderAbout();
   return "<div class=\"empty\">未知页签</div>";
 }
@@ -318,6 +377,52 @@ function bindActions() {
         <div class="main"><div class="d" style="white-space:pre-wrap">${esc(res.body || "")}</div></div></div></div>`;
     };
   });
+  // 设置页：开关切换 + 保存
+  document.querySelectorAll(".sw[data-key]").forEach((btn) => {
+    btn.onclick = () => {
+      const on = btn.dataset.value !== "true";
+      btn.dataset.value = on ? "true" : "false";
+      btn.classList.toggle("on", on);
+      btn.querySelector("span").textContent = on ? "开" : "关";
+    };
+  });
+  const saveBtn = el("cfg-save");
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      const values = {};
+      document.querySelectorAll("[data-key][data-type]").forEach((node) => {
+        const key = node.dataset.key;
+        const type = node.dataset.type;
+        if (node.classList.contains("sw")) {
+          values[key] = node.dataset.value === "true";
+        } else if (type === "int") {
+          values[key] = parseInt(node.value || "0", 10);
+        } else if (type === "float") {
+          values[key] = parseFloat(node.value || "0");
+        } else if (type === "list" || type === "object" || type === "dict" || type === "template_list") {
+          values[key] = node.value;
+        } else {
+          values[key] = node.value;
+        }
+      });
+      saveBtn.disabled = true;
+      saveBtn.textContent = "保存中…";
+      try {
+        const res = await apiPost("config/update", { values });
+        const changed = (res && res.changed) || [];
+        toast(changed.length ? `已保存 ${changed.length} 项` : "没有改动");
+        render();
+      } catch (err) {
+        toast("保存失败：" + (err && err.message ? err.message : err), true);
+        saveBtn.disabled = false;
+        saveBtn.textContent = "保存";
+      }
+    };
+  }
+  const resetBtn = el("cfg-reset");
+  if (resetBtn) {
+    resetBtn.onclick = () => render();
+  }
   const more = el("tool-more");
   if (more) {
     more.onclick = () => {
