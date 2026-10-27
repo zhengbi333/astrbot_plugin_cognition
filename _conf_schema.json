@@ -11,6 +11,18 @@
       }
     }
   },
+  "simulation": {
+    "description": "试运行（只演不做）",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "试运行模式",
+        "type": "bool",
+        "default": false,
+        "hint": "打开后，写文件、生成文档、执行代码等**只演不做**，工具会返回「试运行，未执行」。用来观察她会怎么动手。"
+      }
+    }
+  },
   "auth": {
     "description": "谁能用（账号分级）",
     "type": "object",

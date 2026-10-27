@@ -1,6 +1,12 @@
 # 更新日志
 
 
+
+## alpha-1.5.7（当前）
+
+- P0-3 试运行：写操作只演不做
+- 详见 [changelogs/alpha-1.5.7.md](changelogs/alpha-1.5.7.md)。
+
 ## alpha-1.5.6（当前）
 
 - `page_config.py` 里有：

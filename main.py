@@ -242,6 +242,20 @@ class CognitionPlugin(Star):
             logger.warning("[Toolbox] 解析工作区失败，回退到共用工作区: %s", exc)
             return self.workspace
 
+    def _simulation_on(self) -> bool:
+        """试运行：只回话，不真的改东西。"""
+        try:
+            return bool(self.config.bool("simulation.enabled", False))
+        except Exception:
+            return False
+
+    def _sim_block(self, action: str, detail: str = "") -> str:
+        """试运行下拦下写操作，返回给模型看的说明（空串=放行）。"""
+        if not self._simulation_on():
+            return ""
+        self._note_call(action, False, "试运行未执行")
+        return f"（试运行，未执行）{detail or action}：现在只演不做，关闭试运行后会真正执行。"
+
     def _allow(self, event: Any, action: str) -> str:
         """权限门：按身份等级判断这个动作能不能做。返回空串表示放行。"""
         principal = self.principal_for(event)
@@ -464,6 +478,9 @@ class CognitionPlugin(Star):
         deny = self._allow(event, "write")
         if deny:
             return deny
+        sim = self._sim_block("toolbox_fs_write", "写文件")
+        if sim:
+            return sim
         path = str(kwargs.get("path") or "").strip()
         content = str(kwargs.get("content") or "")
         overwrite_raw = kwargs.get("overwrite", True)
@@ -809,6 +826,9 @@ class CognitionPlugin(Star):
         deny = self._allow(event, "office")
         if deny:
             return deny
+        sim = self._sim_block("toolbox_doc_write", "生成文档")
+        if sim:
+            return sim
         if not self._bool("fs.allow_write", True):
             return "工作区现在是只读的，不能写文档。"
         path = str(kwargs.get("path") or "").strip()
@@ -976,6 +996,9 @@ class CognitionPlugin(Star):
         deny = self._allow(event, "exec")
         if deny:
             return deny
+        sim = self._sim_block("toolbox_python", "执行代码")
+        if sim:
+            return sim
         denied = self._owner_denied(event, tool="python")
         if denied:
             return denied
@@ -1316,6 +1339,9 @@ class CognitionPlugin(Star):
         deny = self._allow(event, "archive")
         if deny:
             return deny
+        sim = self._sim_block("toolbox_archive", "打包/解包")
+        if sim:
+            return sim
         action = str(kwargs.get("action") or "pack").strip().lower()
         try:
             ws = self.workspace_for(event)
@@ -1526,6 +1552,9 @@ class CognitionPlugin(Star):
         deny = self._allow(event, "write")
         if deny:
             return deny
+        sim = self._sim_block("toolbox_edit", "编辑文件")
+        if sim:
+            return sim
         path = str(kwargs.get("path") or "").strip()
         old_text = str(kwargs.get("old_text") or "")
         new_text = str(kwargs.get("new_text") or "")
@@ -1733,6 +1762,9 @@ class CognitionPlugin(Star):
         deny = self._allow(event, "shell")
         if deny:
             return deny
+        sim = self._sim_block("toolbox_shell_run", "执行命令")
+        if sim:
+            return sim
         command = str(kwargs.get("command") or "").strip()
         try:
             allow = shell_mod.parse_allowlist(self._str("shell.allowlist", ""))
