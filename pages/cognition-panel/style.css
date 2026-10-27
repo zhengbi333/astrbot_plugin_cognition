@@ -8,14 +8,14 @@
 */
 
 :root {
-  --bg: #14141a;
-  --bg2: #1a1a21;
-  --panel: #202028;
-  --line: #3a3a46;
-  --line2: #2a2a34;
+  --bg: #1e1e27;
+  --bg2: #23232c;
+  --panel: #2a2a35;
+  --line: #4c4c5a;
+  --line2: #383844;
   --fg: #f6f6f8;
-  --dim: #a8a8b4;
-  --dimmer: #787884;
+  --dim: #c2c2cf;
+  --dimmer: #9494a2;
   --accent: #ffe66b;
   --accent-dim: #8a8030;
   --warn: #ff7a45;
@@ -34,8 +34,8 @@ html, body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -141,19 +141,19 @@ html, body {
 .rail {
   border-right: 1px solid var(--line);
   padding: 16px 0;
-  background: rgba(10,10,11,0.55);
+  background: rgba(20,20,26,0.6);
 }
 .rail button {
   display: grid;
-  grid-template-columns: 30px 1fr;
+  grid-template-columns: 32px 1fr;
   align-items: center;
   width: 100%;
-  padding: 11px 14px;
+  padding: 13px 16px;
   border: 0;
   background: transparent;
   color: var(--dim);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.1em;
   text-align: left;
   cursor: pointer;
@@ -199,11 +199,11 @@ html, body {
 .titles { flex: 1; min-width: 0; }
 .titles h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 19px;
   letter-spacing: 0.08em;
   font-weight: 700;
 }
-.titles p { margin: 3px 0 0; font-size: 11px; color: var(--dimmer); letter-spacing: 0.06em; }
+.titles p { margin: 3px 0 0; font-size: 12px; color: var(--dimmer); letter-spacing: 0.06em; }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px); }
@@ -232,27 +232,27 @@ html, body {
   border: 1px solid var(--line2);
 }
 .cell {
-  background: linear-gradient(180deg, #24242d, #1e1e26);
+  background: linear-gradient(180deg, #3a3a47, #2f2f3b);
   padding: 14px 16px;
   position: relative;
   min-height: 76px;
 }
 .cell .k {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.2em;
   color: var(--dim);
   text-transform: uppercase;
 }
 .cell .v {
   margin-top: 6px;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--fg);
   word-break: break-word;
 }
 .cell .v.big { font-size: 24px; letter-spacing: 0.02em; }
 .cell .v.accent { color: var(--accent); }
-.cell .v.small { font-size: 12px; color: #c8c8d2; line-height: 1.6; }
-.cell .v.path { font-size: 11px; color: #c8c8d2; word-break: break-all; line-height: 1.7; }
+.cell .v.small { font-size: 12px; color: #d6d6e2; line-height: 1.6; }
+.cell .v.path { font-size: 11px; color: #d6d6e2; word-break: break-all; line-height: 1.7; }
 .cell::after {
   content: "";
   position: absolute;
@@ -275,22 +275,22 @@ html, body {
 .sect .rule { flex: 1; height: 1px; background: var(--line2); }
 
 /* 列表 */
-.list { border: 1px solid var(--line2); background: #1d1d25; }
+.list { border: 1px solid var(--line2); background: #2e2e3a; }
 .row {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: 104px minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: start;
-  padding: 12px 14px;
+  padding: 13px 16px;
   border-bottom: 1px solid var(--line2);
-  font-size: 12px;
+  font-size: 13px;
 }
 .row:last-child { border-bottom: 0; }
 .row:hover { background: rgba(255,255,255,0.02); }
 .row .id { color: var(--accent); font-size: 11px; letter-spacing: 0.1em; }
 .row .main { min-width: 0; }
 .row .t { color: var(--fg); }
-.row .d { color: var(--dim); font-size: 11px; margin-top: 3px; word-break: break-word; }
+.row .d { color: var(--dim); font-size: 12px; margin-top: 3px; word-break: break-word; }
 .row .r { color: var(--dimmer); font-size: 10px; text-align: right; white-space: nowrap; }
 
 /* 标签 */
@@ -332,7 +332,7 @@ html, body {
 .form input, .form textarea {
   flex: 1;
   min-width: 180px;
-  background: #0d0d0f;
+  background: #191920;
   border: 1px solid var(--line);
   color: var(--fg);
   font: inherit;
@@ -353,14 +353,14 @@ html, body {
   padding: 9px;
   border: 0;
   border-top: 1px solid var(--line2);
-  background: #101013;
+  background: #26262f;
   color: var(--dim);
   font: inherit;
   font-size: 11px;
   letter-spacing: 0.16em;
   cursor: pointer;
 }
-.more:hover { color: var(--accent); background: #141418; }
+.more:hover { color: var(--accent); background: #2c2c37; }
 
 /* 空态 */
 .empty {
