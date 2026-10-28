@@ -3,6 +3,12 @@
 
 
 
+
+## alpha-1.5.9（当前）
+
+- 第 2 个迁移：改签名 → `qq_set_signature`
+- 详见 [changelogs/alpha-1.5.9.md](changelogs/alpha-1.5.9.md)。
+
 ## alpha-1.5.8（当前）
 
 - 架构调整：认知插件 = 统一工具库

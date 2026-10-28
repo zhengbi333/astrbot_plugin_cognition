@@ -356,6 +356,50 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_set_signature")
+    async def qq_set_signature_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """改你 QQ 上的个性签名（对外可见，别人点开你资料能看到）。
+
+        什么时候用：心情明显变了、想留一句话、或者对方问到你的签名。
+        不要用：每次聊天都改、或者写长句子（签名要短，像真人随手写的那种）。
+
+        Args:
+            text(string): 新的签名文本，60 字以内。
+        """
+        block = self._gate("signature", "actions.signature_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "signature")
+        if deny:
+            return deny
+
+        text = str(kwargs.get("text") or "").strip()
+        if not text:
+            self._note_call("signature", False, "空文本")
+            return "签名文本不能为空。"
+        if len(text) > 60:
+            self._note_call("signature", False, f"超长 {len(text)}")
+            return f"签名太长（{len(text)} 字），最多 60 字，改短一点。"
+
+        sim = self._sim_block("signature", "改签名")
+        if sim:
+            return sim
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("signature", False, "平台不支持 call_action")
+            return "这个平台适配器不支持主动动作，改不了签名。"
+        try:
+            await caller("set_self_longnick", long_nick=text)
+        except Exception as exc:
+            self._note_call("signature", False, str(exc))
+            return f"改签名失败：{type(exc).__name__}: {exc}（如实说没改成）"
+
+        self._note_call("signature", True, text[:20])
+        await self._remember_action(event, kind="signature", text=f"把签名改成了「{text}」")
+        return f"签名已改成「{text}」。"
+
     @filter.llm_tool(name="qq_poke")
     async def qq_poke_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """戳对方一下（QQ 的「拍一拍」）。
