@@ -309,7 +309,7 @@
       "owner_ids": {
         "description": "允许的账号（QQ 号）",
         "type": "string",
-        "default": "3457225049",
+        "default": "10001",
         "hint": "逗号分隔。**留空表示谁都不能用**（不是所有人能用）。群友不在名单里会被直接拒绝。"
       },
       "timeout_seconds": {
