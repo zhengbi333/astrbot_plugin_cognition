@@ -7,6 +7,15 @@
 
 
 
+
+## alpha-1.5.13（当前）
+
+- **第 6 条：空间点赞 `qq_qzone_like` + 评论 `qq_qzone_comment`**（都是 admin、**都默认关**）。评论风险最高（文字出现在别人说说下面），hint 里写了「建议一直关」。
+- **让 `qq_qzone_feeds` 返回 tid**（`tid` 是点赞评论的唯一凭据，来自 msg_list 不是 feeds）；缺参数一律拒绝，不拿空值调接口。
+- 超时：点赞 40s / 评论 60s，评论超时明确说「可能已发出，不确定」。
+- `audit_103_qzone_interact.py` **35/35**。
+- 详见 [changelogs/alpha-1.5.13.md](changelogs/alpha-1.5.13.md)。
+
 ## alpha-1.5.12（当前）
 
 - **第 5 条：看好友动态 `qq_qzone_feeds`**（只读，权限 member，40 秒超时，只抽可读正文不给 html，兼容 list/feeds/data/items 四种返回字段）。

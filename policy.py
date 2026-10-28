@@ -51,6 +51,10 @@ _ACTION_MIN_LEVEL: dict[str, str] = {
     "qzone_post": LEVEL_ADMIN,
     # 空间只读：成员即可
     "qzone_feeds": LEVEL_MEMBER,
+    # 空间评论：**公开可见**，风险最高
+    "qzone_comment": LEVEL_ADMIN,
+    # 空间点赞：对外可见
+    "qzone_like": LEVEL_ADMIN,
 }
 
 

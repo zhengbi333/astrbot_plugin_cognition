@@ -356,6 +356,118 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_qzone_like")
+    async def qq_qzone_like_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """给一条 QQ 空间说说点赞。
+
+        什么时候用：看到朋友发了值得鼓励的内容。
+        不要用：没看过那条说说就点（需要先 qq_qzone_feeds 拿到 tid）。
+
+        Args:
+            tid(string): 说说的 id（从 qq_qzone_feeds 的结果里取，形如 [xxxx]）。
+            target_uin(string): 那条说说所属的 QQ 号（同一条动态里带出来）。
+        """
+        block = self._gate("qzone_like", "actions.qzone_like_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "qzone_like")
+        if deny:
+            return deny
+
+        tid = str(kwargs.get("tid") or "").strip()
+        target = str(kwargs.get("target_uin") or "").strip()
+        if not tid:
+            self._note_call("qzone_like", False, "缺 tid")
+            return "缺说说 id（tid）。先调 qq_qzone_feeds 看动态，再从结果里取。"
+        if not target or not target.isdigit():
+            self._note_call("qzone_like", False, "缺 target_uin")
+            return "缺 target_uin（那条说说所属的 QQ 号）。"
+
+        sim = self._sim_block("qzone_like", f"给说说 {tid[:12]} 点赞")
+        if sim:
+            return sim
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("qzone_like", False, "平台不支持")
+            return "这个平台适配器不支持主动动作，点不了赞。"
+        try:
+            await asyncio.wait_for(
+                caller("like_qzone", tid=tid, target_uin=int(target)), timeout=40
+            )
+        except asyncio.TimeoutError:
+            self._note_call("qzone_like", False, "超时")
+            return "点赞超时了（40 秒），可能空间接口不可用。"
+        except Exception as exc:
+            self._note_call("qzone_like", False, str(exc))
+            return f"点赞失败：{type(exc).__name__}: {exc}（如实说没点上）"
+
+        self._note_call("qzone_like", True, tid[:12])
+        await self._remember_action(event, kind="qzone_like", text=f"给一条说说点了赞（{tid[:12]}）")
+        return "已经给那条说说点赞了。"
+
+    @filter.llm_tool(name="qq_qzone_comment")
+    async def qq_qzone_comment_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """评论一条 QQ 空间说说（**公开可见**，会出现在别人的说说下面）。
+
+        什么时候用：看到朋友发了内容，你有真心想说的话。
+        不要用：没读过那条说说、或者只能说「不错」「加油」这种空话。
+
+        Args:
+            tid(string): 说说 id（从 qq_qzone_feeds 取）。
+            target_uin(string): 说说所属 QQ 号。
+            content(string): 评论内容，60 字以内，要具体（提到对方说的那件事）。
+        """
+        block = self._gate("qzone_comment", "actions.qzone_comment_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "qzone_comment")
+        if deny:
+            return deny
+
+        tid = str(kwargs.get("tid") or "").strip()
+        target = str(kwargs.get("target_uin") or "").strip()
+        content = str(kwargs.get("content") or "").strip()
+        if not tid:
+            self._note_call("qzone_comment", False, "缺 tid")
+            return "缺说说 id（tid）。先调 qq_qzone_feeds 看动态。"
+        if not target or not target.isdigit():
+            self._note_call("qzone_comment", False, "缺 target_uin")
+            return "缺 target_uin（那条说说所属的 QQ 号）。"
+        if not content:
+            self._note_call("qzone_comment", False, "空评论")
+            return "评论不能为空。"
+        if len(content) > 60:
+            self._note_call("qzone_comment", False, f"超长 {len(content)}")
+            return f"评论太长（{len(content)} 字），最多 60 字。"
+
+        sim = self._sim_block("qzone_comment", f"评论 {tid[:12]}：{content[:30]}")
+        if sim:
+            return sim
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("qzone_comment", False, "平台不支持")
+            return "这个平台适配器不支持主动动作，评论不了。"
+        try:
+            await asyncio.wait_for(
+                caller("comment_qzone", tid=tid, target_uin=int(target), content=content), timeout=60
+            )
+        except asyncio.TimeoutError:
+            self._note_call("qzone_comment", False, "超时")
+            return "评论超时了（60 秒）。可能已经发出去了，也可能没发 —— 如实说不确定。"
+        except Exception as exc:
+            self._note_call("qzone_comment", False, str(exc))
+            return f"评论失败：{type(exc).__name__}: {exc}（如实说没评上）"
+
+        self._note_call("qzone_comment", True, content[:20])
+        await self._remember_action(
+            event, kind="qzone_comment", text=f"在别人说说下评论了：{content[:40]}"
+        )
+        return "评论已经发出去了（公开可见）。"
+
     @filter.llm_tool(name="qq_qzone_feeds")
     async def qq_qzone_feeds_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """看 QQ 空间里好友最近发了什么（只读，不会改动任何东西）。
@@ -418,7 +530,10 @@ class CognitionPlugin(Star):
             who = str(item.get("nickname") or item.get("name") or item.get("uin") or "").strip()
             if not text:
                 continue
-            lines.append(f"- {who or '有人'}：{text[:120]}")
+            # 把 tid 带出来：这是后续点赞/评论的唯一凭据
+            tid = str(item.get("tid") or item.get("id") or "").strip()
+            head = f"[{tid}] " if tid else ""
+            lines.append(f"- {head}{who or '有人'}：{text[:120]}")
 
         self._note_call("qzone_feeds", True, f"{len(lines)} 条")
         if not lines:
