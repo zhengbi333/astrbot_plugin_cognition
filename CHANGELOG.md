@@ -5,6 +5,14 @@
 
 
 
+
+## alpha-1.5.11（当前）
+
+- **第 4 条：发说说 `qq_qzone_post`**（权限 admin、默认关、默认仅自己可见）。
+- **借鉴 Aurabot 修正两处**：①`ugc_right` 好友可见是 **4**（原来写错）；②**必须给 60 秒超时**，空间接口走网页 API，不设超时必然失败；超时单独处理（可能已发出，只能如实说不确定）。
+- `audit_101_qzone_post.py` **30/30**。
+- 详见 [changelogs/alpha-1.5.11.md](changelogs/alpha-1.5.11.md)。
+
 ## alpha-1.5.10（当前）
 
 - 第 3 个迁移：名片赞 → `qq_like`

@@ -356,6 +356,79 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_qzone_post")
+    async def qq_qzone_post_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """发一条 QQ 空间说说（像真人写日记或感慨那样）。
+
+        什么时候用：你想把自己的心情、见闻、想法记下来给人看时。
+        不要用：每次聊天都发、或者把对话内容原样搬上去（那是聊天记录不是说说）。
+
+        Args:
+            content(string): 说说正文，200 字以内。
+        """
+        block = self._gate("qzone_post", "actions.qzone_post_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "qzone_post")
+        if deny:
+            return deny
+
+        content = str(kwargs.get("content") or "").strip()
+        if not content:
+            self._note_call("qzone_post", False, "空内容")
+            return "说说内容不能为空。"
+        if len(content) > 200:
+            self._note_call("qzone_post", False, f"超长 {len(content)}")
+            return f"说说太长（{len(content)} 字），最多 200 字。"
+
+        try:
+            ugc_right = int(self._int("actions.qzone_post_ugc_right", 64))
+        except (TypeError, ValueError):
+            ugc_right = 64
+
+        sim = self._sim_block("qzone_post", f"发说说（{len(content)} 字，权限 {ugc_right}）")
+        if sim:
+            return sim
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("qzone_post", False, "平台不支持 call_action")
+            return "这个平台适配器不支持主动动作，发不了说说。"
+
+        # 先探测账号有没有空间能力（登录态失效/新号风控会在这里失败）
+        # 空间接口走腾讯网页 API，本身慢 —— 必须给足超时（Aurabot 用 60 秒）
+        try:
+            await asyncio.wait_for(caller("get_qzone_public_capabilities"), timeout=25)
+        except asyncio.TimeoutError:
+            self._note_call("qzone_post", False, "能力探测超时")
+            return "发不了说说：空间接口 25 秒没响应（可能登录态失效或网络问题），如实说没发。"
+        except Exception as exc:
+            self._note_call("qzone_post", False, f"能力探测失败: {exc}")
+            return (
+                f"发不了说说：空间接口不可用（{type(exc).__name__}）。"
+                "可能是登录态失效或账号没有空间权限 —— 如实告诉对方，别假装发了。"
+            )
+
+        try:
+            # 60 秒超时：发说说比普通动作慢得多（要上传、要过接口）
+            await asyncio.wait_for(
+                caller("send_qzone_msg", content=content, ugc_right=ugc_right), timeout=60
+            )
+        except asyncio.TimeoutError:
+            self._note_call("qzone_post", False, "发送超时")
+            return "发说说超时了（60 秒没响应）。可能已经发出去了，也可能没发 —— 如实说「不确定是否发出」。"
+        except Exception as exc:
+            self._note_call("qzone_post", False, str(exc))
+            return f"发说说失败：{type(exc).__name__}: {exc}（如实说没发出去）"
+
+        scope = "仅自己可见" if ugc_right == 64 else f"权限 {ugc_right}"
+        self._note_call("qzone_post", True, f"{len(content)} 字 / {scope}")
+        await self._remember_action(
+            event, kind="qzone_post", text=f"在空间发了一条说说（{scope}）：{content[:40]}"
+        )
+        return f"说说已经发出去了（{scope}）。"
+
     @filter.llm_tool(name="qq_like")
     async def qq_like_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """给对方的名片点个赞（QQ 的「名片赞」）。
