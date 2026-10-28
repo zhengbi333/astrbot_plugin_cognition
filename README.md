@@ -140,3 +140,28 @@ LLM 本身不能读盘、不能联网。没有工具时，它会"假装"做过�
 - 本项目采用 **GNU AGPL-3.0**（与 AstrBot 一致）：Copyright (C) 2026 证毕 (zhengbi333)
 - 可自由使用、修改、分发；若通过网络提供服务，需同样以 AGPL-3.0 开放对应源码。
 - 完整条款见仓库根目录 LICENSE；上游 AstrBot：https://github.com/AstrBotDevs/AstrBot
+
+---
+
+## 参考与致谢
+
+### 运行平台
+
+- **[AstrBot](https://github.com/AstrBotDevs/AstrBot)** —— 本插件的宿主平台。插件按 AstrBot 的插件 API
+  （`Star`、`filter.llm_tool`、`@filter.on_llm_request` 等）编写，配置面板遵循它的 `_conf_schema.json` 约定。
+- **[SnowLuma](https://github.com/NapNeko/NapCatQQ)**（NapCatQQ Desktop 内置的协议端）—— 运行时的 QQ 协议实现。
+  本插件**不包含**它的任何代码，只在运行时通过 OneBot v11 协议与它通信。
+
+### 设计参考
+
+- **[dsh-aurabot-qq](https://github.com/zhengbi333/dsh-aurabot-qq)** —— 一个同样做 QQ 拟人陪伴的 DSH 插件。
+  本项目在下面三处**参考了它的做法**（不是代码）：
+  1. QQ 空间可见范围的取值表：`all=1 / friends=4 / self=64`（这是 QQ 空间协议本身的字段值）；
+  2. 空间接口必须给足超时（它用 60 秒）—— 空间接口走腾讯网页 API，不设超时必然失败；
+  3. "试运行时返回标记，让调用方知道这是演的"这个约定。
+
+### 声明
+
+**本项目为独立实现，未包含上述任何项目的源代码。**
+上列条目是平台依赖与设计参考，不构成代码派生关系。本项目以 **AGPL-3.0** 授权
+（见 `LICENSE`），与上述项目的许可证相互独立。
