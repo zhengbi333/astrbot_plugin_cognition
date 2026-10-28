@@ -356,6 +356,75 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_qzone_feeds")
+    async def qq_qzone_feeds_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """看 QQ 空间里好友最近发了什么（只读，不会改动任何东西）。
+
+        什么时候用：想知道朋友最近怎么样、或者聊天时想接上他们的话题。
+        不要用：频繁刷（接口慢，而且没意义）。
+
+        Args:
+            count(number): 要几条，1~10，默认 5。
+        """
+        block = self._gate("qzone_feeds", "actions.qzone_feeds_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "qzone_feeds")
+        if deny:
+            return deny
+        try:
+            count = int(kwargs.get("count") or 5)
+        except (TypeError, ValueError):
+            count = 5
+        count = max(1, min(10, count))
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("qzone_feeds", False, "平台不支持 call_action")
+            return "这个平台适配器不支持主动动作，看不了动态。"
+
+        try:
+            # 空间接口慢，给足超时
+            raw = await asyncio.wait_for(
+                caller("get_qzone_feeds", page_num=1, count=count), timeout=40
+            )
+        except asyncio.TimeoutError:
+            self._note_call("qzone_feeds", False, "读取超时")
+            return "看动态超时了（40 秒没响应），可能空间接口不可用。"
+        except Exception as exc:
+            self._note_call("qzone_feeds", False, str(exc))
+            return (
+                f"看不了动态：{type(exc).__name__}: {exc}。"
+                "可能是登录态失效或账号没有空间权限 —— 如实说看不到。"
+            )
+
+        items = []
+        if isinstance(raw, dict):
+            for key in ("list", "feeds", "data", "items"):
+                value = raw.get(key)
+                if isinstance(value, list):
+                    items = value
+                    break
+        elif isinstance(raw, list):
+            items = raw
+
+        lines = []
+        for item in items[:count]:
+            if not isinstance(item, dict):
+                continue
+            # 只留可读的正文，不要 html
+            text = str(item.get("content") or item.get("summary") or "").strip()
+            who = str(item.get("nickname") or item.get("name") or item.get("uin") or "").strip()
+            if not text:
+                continue
+            lines.append(f"- {who or '有人'}：{text[:120]}")
+
+        self._note_call("qzone_feeds", True, f"{len(lines)} 条")
+        if not lines:
+            return "空间里暂时没看到新动态（或者返回结构里没有可读内容）。"
+        return "好友最近的动态：\n" + "\n".join(lines)
+
     @filter.llm_tool(name="qq_qzone_post")
     async def qq_qzone_post_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """发一条 QQ 空间说说（像真人写日记或感慨那样）。

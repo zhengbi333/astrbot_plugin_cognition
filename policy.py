@@ -49,6 +49,8 @@ _ACTION_MIN_LEVEL: dict[str, str] = {
     "full_access": LEVEL_ADMIN,
     # 空间动作：对外可见，只有管理员能触发
     "qzone_post": LEVEL_ADMIN,
+    # 空间只读：成员即可
+    "qzone_feeds": LEVEL_MEMBER,
 }
 
 

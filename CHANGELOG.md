@@ -6,6 +6,13 @@
 
 
 
+
+## alpha-1.5.12（当前）
+
+- **第 5 条：看好友动态 `qq_qzone_feeds`**（只读，权限 member，40 秒超时，只抽可读正文不给 html，兼容 list/feeds/data/items 四种返回字段）。
+- `audit_102_qzone_feeds.py` **23/23**。
+- 详见 [changelogs/alpha-1.5.12.md](changelogs/alpha-1.5.12.md)。
+
 ## alpha-1.5.11（当前）
 
 - **第 4 条：发说说 `qq_qzone_post`**（权限 admin、默认关、默认仅自己可见）。

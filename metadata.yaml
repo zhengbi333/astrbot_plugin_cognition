@@ -1,7 +1,7 @@
 name: astrbot_plugin_cognition
 display_name: 为你而在的认知
 author: 证毕＆deepseek
-version: alpha-1.5.11
+version: alpha-1.5.12
 description: 为你而在的认知：给 Bot 一套真正能用的动手能力——在工作区里读写文件、按正则搜索、抓网页正文、联网搜索、下载文件、执行白名单命令。全部有开关、剂量上限与审计记录，文件被关在专用工作区内。
 desc: 给 Bot 动手能力：工作区文件读写/搜索、抓网页、联网搜索、下载文件、受限命令（默认关）。
 repo: https://github.com/zhengbi333/astrbot_plugin_cognition
