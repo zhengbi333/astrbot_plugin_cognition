@@ -356,6 +356,60 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_poke")
+    async def qq_poke_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """戳对方一下（QQ 的「拍一拍」）。
+
+        什么时候用：对方很久没回话、你想引起注意、或者语气上想撒娇/催促。
+        不要用：正经回答问题、或者对方明显有事时反复戳。
+
+        Args:
+            (无参数：戳谁从当前会话自动取)
+        """
+        block = self._gate("poke", "actions.poke_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "poke")
+        if deny:
+            return deny
+        sim = self._sim_block("poke", "戳一戳")
+        if sim:
+            return sim
+
+        sender = ""
+        try:
+            sender = str(event.get_sender_id() or "").strip()
+        except Exception:
+            sender = ""
+        if not sender or not sender.isdigit():
+            self._note_call("poke", False, "拿不到对方 ID")
+            return "拿不到对方 QQ 号，戳不了。"
+
+        group_id = ""
+        try:
+            group_id = str(event.get_group_id() or "").strip()
+        except Exception:
+            group_id = ""
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("poke", False, "平台不支持 call_action")
+            return "这个平台适配器不支持主动动作，戳不了。"
+
+        args: dict[str, Any] = {"user_id": int(sender)}
+        if group_id and group_id.isdigit():
+            args["group_id"] = int(group_id)
+        try:
+            await caller("send_poke", **args)
+        except Exception as exc:
+            self._note_call("poke", False, str(exc))
+            return f"戳一戳失败：{type(exc).__name__}: {exc}（如实说没戳成，别硬说戳到了）"
+
+        self._note_call("poke", True, "已戳")
+        await self._remember_action(event, kind="poke", text="戳了对方一下")
+        return "已戳对方一下。"
+
     @filter.llm_tool(name="toolbox_info")
     async def toolbox_info_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """查看工作区现状与可用工具（文件放哪、还有多少空间、哪些工具开着）。

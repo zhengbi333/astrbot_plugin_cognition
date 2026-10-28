@@ -31,6 +31,8 @@ _ACTION_MIN_LEVEL: dict[str, str] = {
     "search": LEVEL_GUEST,
     "web": LEVEL_GUEST,
     "chat": LEVEL_GUEST,
+    # 她自己的小动作：成员起（访客不能用）
+    "poke": LEVEL_MEMBER,
     # 工作区内写入/产出：成员起
     "write": LEVEL_MEMBER,
     "office": LEVEL_MEMBER,

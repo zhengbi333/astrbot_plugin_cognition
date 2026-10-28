@@ -239,6 +239,12 @@
         "type": "int",
         "default": 10,
         "hint": "一次最多给名片点几个赞（1~10）。"
+      },
+      "poke_enabled": {
+        "description": "允许戳一戳",
+        "type": "bool",
+        "default": true,
+        "hint": "允许她戳对方（QQ 拍一拍）。需要「成员」以上权限；访客用不了。行为本身受「每日动手次数」总限额约束。"
       }
     }
   },

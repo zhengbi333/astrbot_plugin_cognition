@@ -2,6 +2,12 @@
 
 
 
+
+## alpha-1.5.8（当前）
+
+- 架构调整：认知插件 = 统一工具库
+- 详见 [changelogs/alpha-1.5.8.md](changelogs/alpha-1.5.8.md)。
+
 ## alpha-1.5.7（当前）
 
 - P0-3 试运行：写操作只演不做
