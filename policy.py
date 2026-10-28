@@ -53,6 +53,8 @@ _ACTION_MIN_LEVEL: dict[str, str] = {
     "qzone_feeds": LEVEL_MEMBER,
     # 空间评论：**公开可见**，风险最高
     "qzone_comment": LEVEL_ADMIN,
+    # 导入表情：只影响她自己的表情库，成员即可
+    "import_faces": LEVEL_MEMBER,
     # 空间点赞：对外可见
     "qzone_like": LEVEL_ADMIN,
 }

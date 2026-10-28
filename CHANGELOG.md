@@ -8,6 +8,14 @@
 
 
 
+
+## alpha-1.5.14（当前）
+
+- **第 7 条（最后一条）：表情导入 `qq_import_faces`** —— 唯一跨插件的一条：认知取 `fetch_custom_face` → 下载 → 交给陪伴的 `EmojiStore.add_emoji`。用 `find_storyteller()`（照 `find_persona` 的模式）拿陪伴实例。
+- 五种失败都如实说（找不到陪伴 / 不支持 / 超时 / 抛错 / 下载全失败），单张失败跳过。
+- `audit_104_import_faces.py` **25/25**（含 `find_storyteller` 的三种边界）。
+- 详见 [changelogs/alpha-1.5.14.md](changelogs/alpha-1.5.14.md)。
+
 ## alpha-1.5.13（当前）
 
 - **第 6 条：空间点赞 `qq_qzone_like` + 评论 `qq_qzone_comment`**（都是 admin、**都默认关**）。评论风险最高（文字出现在别人说说下面），hint 里写了「建议一直关」。

@@ -356,6 +356,109 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_import_faces")
+    async def qq_import_faces_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """把 QQ 里收藏的表情包导进你自己的表情库（之后就能用它们了）。
+
+        什么时候用：你想让表情库更丰富、或者主人问"你的表情哪来的"。
+        不要用：频繁导（重复的会被跳过，白费流量）。
+
+        Args:
+            count(number): 这次导几张，1~20，默认 10。
+        """
+        block = self._gate("import_faces", "actions.import_faces_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "import_faces")
+        if deny:
+            return deny
+        try:
+            count = int(kwargs.get("count") or 10)
+        except (TypeError, ValueError):
+            count = 10
+        count = max(1, min(20, count))
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("import_faces", False, "平台不支持")
+            return "这个平台适配器不支持主动动作，取不到表情。"
+
+        # ① 找陪伴的 EmojiStore
+        store = None
+        try:
+            from .notify import find_storyteller
+
+            star = find_storyteller(self.context)
+            if star is not None:
+                store = getattr(star, "emoji_store", None)
+        except Exception as exc:
+            self._note_call("import_faces", False, f"找不到陪伴: {exc}")
+        if store is None or not callable(getattr(store, "add_emoji", None)):
+            self._note_call("import_faces", False, "表情库不可用")
+            return (
+                "导不了：没找到陪伴插件的表情库（可能没加载，或者版本不支持 add_emoji）。"
+                "如实说表情库不在线。"
+            )
+
+        # ② 取 QQ 收藏的表情（只读）
+        try:
+            urls = await asyncio.wait_for(
+                caller("fetch_custom_face", count=count, return_type="url"), timeout=40
+            )
+        except asyncio.TimeoutError:
+            self._note_call("import_faces", False, "取表情超时")
+            return "取表情超时了（40 秒），可能接口不可用。"
+        except Exception as exc:
+            self._note_call("import_faces", False, str(exc))
+            return f"取表情失败：{type(exc).__name__}: {exc}（如实说没导成）"
+
+        if not isinstance(urls, list) or not urls:
+            self._note_call("import_faces", True, "0 个")
+            return "QQ 里没取到收藏的表情（可能是空的）。"
+
+        # ③ 下载 + 交给 EmojiStore
+        import urllib.request
+
+        cid = ""
+        try:
+            cats = store.categories() if callable(getattr(store, "categories", None)) else []
+            for c in cats or []:
+                if isinstance(c, dict) and "QQ" in str(c.get("title") or ""):
+                    cid = str(c.get("id") or c.get("cid") or "")
+                    break
+            if not cid and callable(getattr(store, "add_category", None)):
+                created = store.add_category("QQ 收藏表情", "从 QQ 收藏里导进来的")
+                cid = str((created or {}).get("id") or (created or {}).get("cid") or "")
+        except Exception as exc:
+            self._note_call("import_faces", False, f"建分类失败: {exc}")
+            return f"建表情分类失败：{exc}（如实说没导成）"
+        if not cid:
+            self._note_call("import_faces", False, "拿不到分类 id")
+            return "拿不到表情分类 id，导不了（如实说）。"
+
+        ok_count = 0
+        for i, url in enumerate(urls[:count]):
+            url = str(url or "").strip()
+            if not url.startswith("http"):
+                continue
+            try:
+                with urllib.request.urlopen(url, timeout=20) as resp:  # noqa: S310
+                    content = resp.read(4 * 1024 * 1024)
+                ext = ".gif" if url.lower().endswith(".gif") else ".png"
+                store.add_emoji(cid, f"qq_{int(asyncio.get_event_loop().time())}_{i}{ext}", content)
+                ok_count += 1
+            except Exception:
+                continue
+
+        self._note_call("import_faces", True, f"{ok_count}/{len(urls[:count])}")
+        if ok_count == 0:
+            return "一张都没导成（下载失败或格式不支持）—— 如实说没导成。"
+        await self._remember_action(
+            event, kind="import_faces", text=f"从 QQ 收藏里导入了 {ok_count} 张表情"
+        )
+        return f"导进来了 {ok_count} 张表情（共试了 {len(urls[:count])} 张）。"
+
     @filter.llm_tool(name="qq_qzone_like")
     async def qq_qzone_like_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """给一条 QQ 空间说说点赞。

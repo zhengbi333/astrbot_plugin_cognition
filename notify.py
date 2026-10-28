@@ -34,6 +34,23 @@ def find_persona(context: Any) -> Any:
     return None
 
 
+def find_storyteller(context: Any) -> Any:
+    """在已加载插件里找陪伴插件实例（为了拿它的 EmojiStore）。找不到返回 None。"""
+    try:
+        stars = context.get_all_stars() or []
+    except Exception:
+        return None
+    for meta in stars:
+        module = str(getattr(meta, "module_path", "") or "")
+        name = str(getattr(meta, "name", "") or "")
+        module_name = str(getattr(meta, "module", "") or "")
+        if "storyteller" in (module + name + module_name):
+            instance = getattr(meta, "star_cls", None)
+            if instance is not None:
+                return instance
+    return None
+
+
 async def notify_persona(
     context: Any,
     event: Any,
