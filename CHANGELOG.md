@@ -10,12 +10,12 @@
 
 
 
-## alpha-0.1515（当前）
+## alpha-0.29（当前）
 
 - **收尾：面板可见性真正验证了**（`audit_105_panel_visibility.py` **29/29**）。9 项动作配置全部在 `actions` 组里可见、默认值读对、说明不为空。
 - 纠正三处误判：①字段名带组前缀（`actions.poke_enabled`）；②说明字段叫 `label` 不是 `description`；③`page_config` 动态读 schema，不用手写。
 - **八个 `qq_*` 工具在 AstrBot 加载日志里全部注册成功**（`Added llm tool: qq_*`）。
-- 详见 [changelogs/alpha-0.1515.md](changelogs/alpha-0.1515.md)。
+- 详见 [changelogs/alpha-0.29.md](changelogs/alpha-0.29.md)。
 
 ## alpha-1.5.14（当前）
 
