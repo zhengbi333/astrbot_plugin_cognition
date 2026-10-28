@@ -1,7 +1,7 @@
 name: astrbot_plugin_cognition
 display_name: 为你而在的认知
 author: 证毕＆deepseek
-version: alpha-1.5.15
+version: alpha-0.1515
 description: 为你而在的认知：给 Bot 一套真正能用的动手能力——在专用工作区里读写文件、按正则搜索、抓网页正文、联网搜索、下载文件、受限执行命令；以及 8 个 QQ 交互动作（戳一戳、改签名、名片赞、发说说、看好友动态、空间点赞、空间评论、导入收藏表情）。全部有开关、剂量上限、三级权限与审计记录，危险动作默认关闭且支持试运行。
 desc: 给 Bot 动手能力：工作区文件读写/搜索、抓网页、联网搜索、下载、受限命令；以及 8 个 QQ 交互动作（戳/签名/赞/说说/动态/空间互动/表情导入），均有开关与审计。
 repo: https://github.com/zhengbi333/astrbot_plugin_cognition
