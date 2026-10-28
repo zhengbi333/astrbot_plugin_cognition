@@ -356,6 +356,56 @@ class CognitionPlugin(Star):
         return ""
 
     # ------------------------------------------------------------ 工具：概况
+    @filter.llm_tool(name="qq_like")
+    async def qq_like_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
+        """给对方的名片点个赞（QQ 的「名片赞」）。
+
+        什么时候用：对方帮了你、说了让你高兴的话、或者你想表达在意但不想直说。
+        不要用：每天见面都点、或者对方刚说了不高兴的事。
+
+        Args:
+            times(number): 点赞次数，1~5，默认 1。
+        """
+        block = self._gate("like", "actions.like_enabled")
+        if block:
+            return block
+        deny = self._allow(event, "like")
+        if deny:
+            return deny
+
+        sender = ""
+        try:
+            sender = str(event.get_sender_id() or "").strip()
+        except Exception:
+            sender = ""
+        if not sender or not sender.isdigit():
+            self._note_call("like", False, "拿不到 QQ 号")
+            return "拿不到对方 QQ 号，点不了赞。"
+        try:
+            times = int(kwargs.get("times") or 1)
+        except (TypeError, ValueError):
+            times = 1
+        times = max(1, min(5, times))
+
+        sim = self._sim_block("like", f"给 {sender} 点 {times} 个赞")
+        if sim:
+            return sim
+
+        bot = getattr(event, "bot", None)
+        caller = getattr(bot, "call_action", None)
+        if not callable(caller):
+            self._note_call("like", False, "平台不支持 call_action")
+            return "这个平台适配器不支持主动动作，点不了赞。"
+        try:
+            await caller("send_like", user_id=int(sender), times=times)
+        except Exception as exc:
+            self._note_call("like", False, str(exc))
+            return f"点赞失败：{type(exc).__name__}: {exc}（如实说没点上）"
+
+        self._note_call("like", True, f"times={times}")
+        await self._remember_action(event, kind="like", text=f"给对方点了 {times} 个名片赞")
+        return f"已经给你点了 {times} 个赞。"
+
     @filter.llm_tool(name="qq_set_signature")
     async def qq_set_signature_tool(self, event: AstrMessageEvent, **kwargs: Any) -> str:
         """改你 QQ 上的个性签名（对外可见，别人点开你资料能看到）。

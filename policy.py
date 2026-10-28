@@ -34,6 +34,7 @@ _ACTION_MIN_LEVEL: dict[str, str] = {
     # 她自己的小动作：成员起（访客不能用）
     "poke": LEVEL_MEMBER,
     "signature": LEVEL_MEMBER,
+    "like": LEVEL_MEMBER,
     # 工作区内写入/产出：成员起
     "write": LEVEL_MEMBER,
     "office": LEVEL_MEMBER,

@@ -4,6 +4,12 @@
 
 
 
+
+## alpha-1.5.10（当前）
+
+- 第 3 个迁移：名片赞 → `qq_like`
+- 详见 [changelogs/alpha-1.5.10.md](changelogs/alpha-1.5.10.md)。
+
 ## alpha-1.5.9（当前）
 
 - 第 2 个迁移：改签名 → `qq_set_signature`
