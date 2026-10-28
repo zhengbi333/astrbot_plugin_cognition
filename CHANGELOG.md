@@ -9,6 +9,14 @@
 
 
 
+
+## alpha-1.5.15（当前）
+
+- **收尾：面板可见性真正验证了**（`audit_105_panel_visibility.py` **29/29**）。9 项动作配置全部在 `actions` 组里可见、默认值读对、说明不为空。
+- 纠正三处误判：①字段名带组前缀（`actions.poke_enabled`）；②说明字段叫 `label` 不是 `description`；③`page_config` 动态读 schema，不用手写。
+- **八个 `qq_*` 工具在 AstrBot 加载日志里全部注册成功**（`Added llm tool: qq_*`）。
+- 详见 [changelogs/alpha-1.5.15.md](changelogs/alpha-1.5.15.md)。
+
 ## alpha-1.5.14（当前）
 
 - **第 7 条（最后一条）：表情导入 `qq_import_faces`** —— 唯一跨插件的一条：认知取 `fetch_custom_face` → 下载 → 交给陪伴的 `EmojiStore.add_emoji`。用 `find_storyteller()`（照 `find_persona` 的模式）拿陪伴实例。
